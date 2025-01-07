@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QInputDialog, QPushButton, QCheckBox
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QInputDialog, QPushButton, QCheckBox, QMessageBox
 from database import Database
 
 class Functionality:
@@ -108,7 +108,7 @@ class Functionality:
 
             # Добавление задач в виджет
             for name, is_completed in tasks:
-                task_label = QLabel(f"Задача: {name}\nСтатус: {'Выполнено' if is_completed else 'Не выполнено'}")
+                task_label = QLabel(f"Задача: {name}\n Статус: {'Выполнено' if is_completed else 'Не выполнено'}")
                 task_label.setStyleSheet("border: 1px solid #ccc; padding: 5px; margin: 5px;")
                 self.window.task_list_layout.addWidget(task_label)
 
@@ -130,3 +130,34 @@ class Functionality:
 
         except Exception as e:
             print(f"Ошибка при добавлении задачи: {e}")
+
+    def handle_project_click(self, project_id, project_name):
+        # Сохраняем текущий выбранный проект
+        self.current_project_id = project_id
+        self.current_project_name = project_name
+        
+        try:
+            # Получаем задачи для выбранного проекта
+            tasks = self.get_tasks_for_project(project_id)
+            
+            # Обновляем интерфейс
+            self.window.update_tasks_for_project(project_id, project_name)
+            
+            # Подсветка выбранного проекта (опционально)
+            for button in self.window.findChildren(QPushButton):
+                if button.text() == project_name:
+                    button.setStyleSheet("""
+                        QPushButton {
+                            background-color: #4CAF50;
+                            color: white;
+                            border: none;
+                            padding: 8px;
+                            border-radius: 4px;
+                            text-align: left;
+                        }
+                    """)
+                elif button.parent() == self.window.project_list_widget:  # Проверяем, что это кнопка проекта
+                    button.setStyleSheet(self.window.style_button())
+                
+        except Exception as e:
+            QMessageBox.critical(self.window, "Ошибка", f"Не удалось загрузить задачи: {str(e)}")

@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import QMainWindow, QPushButton, QVBoxLayout, QDialog, QLabel, QFrame, QApplication, QScrollArea, QWidget
 import sys
 from functionality import Functionality
-import qtawesome as qta
+
 
 
 
@@ -27,10 +27,6 @@ class Window(QMainWindow):
         # Отображение окна
         self.showMaximized()
 
-        button = QPushButton(self)
-        button.setIcon(qta.icon('fa.trash'))  # Иконка мусорки
-        button.setGeometry(900, 500, 30, 30)
-        button.setStyleSheet("background-color: transparent; border: none;")
 
     # Метод для кнопки "Входящие"
     def input_button(self):
@@ -86,6 +82,17 @@ class Window(QMainWindow):
 
         # Обновление списка проектов
         self.func.update_projects()
+
+    # Метод для создания кнопки проекта
+    def create_project_button(self, project):
+        button = QPushButton(project['name'], self)
+        button.setStyleSheet(self.style_button())
+        # Привязываем обработчик к кнопке
+        button.clicked.connect(
+            lambda checked, p_id=project['id'], p_name=project['name']: 
+            self.func.handle_project_click(p_id, p_name)
+        )
+        self.project_list_layout.addWidget(button)
 
     # Стиль кнопки
     def style_button(self):
