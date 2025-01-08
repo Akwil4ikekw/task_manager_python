@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QInputDialog, QPushButton, QCheckBox, QMessageBox
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QInputDialog, QPushButton, QCheckBox,QLineEdit,QHBoxLayout, QMessageBox
 from database import Database
 
 class Functionality:
@@ -34,130 +34,165 @@ class Functionality:
         dlg.setLayout(layout)
         dlg.exec()
 
-    def show_dialog(self):
-        # Окно для ввода названия нового проекта
+    def clicked_create_task(self):
         dlg = QDialog(self.window)
-        dlg.setWindowTitle("Добавление проекта")
+        dlg.setWindowTitle("Сообщение")
 
-
-        input_name, ok = QInputDialog.getText(dlg, "Новый проект", "Название проекта:")
-        if ok and input_name:
-            self.db.add_project(input_name)
-            self.update_projects()
-
-
-
-    def show_tasks_window(self, project_id):
-        # Окно для отображения задач проекта
-        dlg = QDialog(self.window)
-        dlg.setWindowTitle("Задачи проекта")
+        dlg.resize(500, 300)
         layout = QVBoxLayout()
+    
+        task_name = QLineEdit()
+        task_name.setPlaceholderText("Введите название задачи")
+        
+        # Создаем горизонтальный layout для кнопки
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()  # Добавляем растяжку слева
+        
+        create_button = QPushButton("Создать задачу")
+        create_button.setFixedSize(100, 30)
+        button_layout.addWidget(create_button)  # Добавляем кнопку справа
+        
+        description_task = QLineEdit()
+        description_task.setPlaceholderText("Введите описание задачи") 
+        description_task.setFixedSize(500,80)
 
-        tasks = self.db.get_tasks_by_id(project_id)
-        if tasks:
-            for task_name, is_completed in tasks:
-                checkbox = QCheckBox(task_name, dlg)
-                checkbox.setChecked(is_completed)
-                layout.addWidget(checkbox)
-        else:
-            label = QLabel("Нет задач для этого проекта.", dlg)
-            layout.addWidget(label)
 
-        # Добавить задачу
-        button = QPushButton("Добавить задачу", dlg)
-        button.clicked.connect(lambda: self.add_task(project_id))
-        layout.addWidget(button)
+    
+        layout.addWidget(task_name)
+        layout.addWidget(description_task)
+        layout.addStretch()  # Добавляем вертикальную растяжку
+        layout.addLayout(button_layout)  # Добавляем горизонтальный layout с кнопкой
+        
+        def on_create_button_clicked(self):
+            pass
+        #TODO: Сделать добавление таски в базу данных. Помечая кто и что добавил каким-то хайлайтером
+        
 
         dlg.setLayout(layout)
         dlg.exec()
-
-    def update_projects(self):
-        try:
-            # Очистим текущий список проектов
-            for i in reversed(range(self.window.project_list_layout.count())):
-                widget = self.window.project_list_layout.itemAt(i).widget()
-                if widget:
-                    widget.deleteLater()
-
-            # Получение списка проектов из базы данных
-            projects = self.db.get_all_projects()
-
-            # Добавляем каждый проект как кнопку
-            for project_id, project_name in projects:
-                button = QPushButton(project_name)
-                button.setStyleSheet(self.window.style_button())
-                button.clicked.connect(lambda _, pid=project_id: self.show_tasks_window(pid))
-                self.window.project_list_layout.addWidget(button)
-
-        except Exception as e:
-            print(f"Ошибка при обновлении проектов: {e}")
-
-
-    def show_tasks(self, project_id):
-        try:
-            self.current_project_id = project_id
-
-            # Очистка списка задач
-            for i in reversed(range(self.window.task_list_layout.count())):
-                widget = self.window.task_list_layout.itemAt(i).widget()
-                if widget:
-                    widget.deleteLater()
-
-            # Запрос на получение задач для выбранного проекта
-            tasks = self.db.get_tasks_by_id(project_id)
-
-            # Добавление задач в виджет
-            for name, is_completed in tasks:
-                task_label = QLabel(f"Задача: {name}\n Статус: {'Выполнено' if is_completed else 'Не выполнено'}")
-                task_label.setStyleSheet("border: 1px solid #ccc; padding: 5px; margin: 5px;")
-                self.window.task_list_layout.addWidget(task_label)
-
-        except Exception as e:
-            print(f"Ошибка при отображении задач: {e}")
-
-    def add_task(self, project_id):
-        try:
-            task_name = self.window.new_task_input.text().strip()
-            if not task_name:
-                return  # Пустое имя задачи
-
-            # Добавление задачи в базу данных
-            self.db.add_task_by_id(project_id, task_name)
-
-            # Очистка поля ввода и обновление задач
-            self.window.new_task_input.clear()
-            self.show_tasks(project_id)
-
-        except Exception as e:
-            print(f"Ошибка при добавлении задачи: {e}")
-
-    def handle_project_click(self, project_id, project_name):
-        # Сохраняем текущий выбранный проект
-        self.current_project_id = project_id
-        self.current_project_name = project_name
         
-        try:
-            # Получаем задачи для выбранного проекта
-            tasks = self.get_tasks_for_project(project_id)
-            
-            # Обновляем интерфейс
-            self.window.update_tasks_for_project(project_id, project_name)
-            
-            # Подсветка выбранного проекта (опционально)
-            for button in self.window.findChildren(QPushButton):
-                if button.text() == project_name:
-                    button.setStyleSheet("""
-                        QPushButton {
-                            background-color: #4CAF50;
-                            color: white;
-                            border: none;
-                            padding: 8px;
-                            border-radius: 4px;
-                            text-align: left;
-                        }
-                    """)
-                elif button.parent() == self.window.project_list_widget:  # Проверяем, что это кнопка проекта
-                    button.setStyleSheet(self.window.style_button())
+    def show_login_window(self):
+        dlg = QDialog(self.window)
+        dlg.setWindowTitle("Вход в систему")
+        dlg.resize(400, 200)
+        
+        layout = QVBoxLayout()
+        
+        email = QLineEdit()
+        email.setPlaceholderText("Email")
+        
+        password = QLineEdit()
+        password.setPlaceholderText("Пароль")
+        password.setEchoMode(QLineEdit.Password)
+        
+        button_layout = QHBoxLayout()
+        
+        login_button = QPushButton("Войти")
+        register_button = QPushButton("Регистрация")
+        
+        def try_login():
+            if not all([email.text(), password.text()]):
+                QMessageBox.warning(dlg, "Ошибка", "Все поля должны быть заполнены")
+                return
+
+            try:
+                user_data = self.db.login_user(email.text(), password.text())
+                if user_data:
+                    self.current_user = {
+                        'user_id': user_data[0],
+                        'username': user_data[1],
+                        'email': user_data[2],
+                        'created_at': user_data[3]
+                    }
+                    dlg.accept()
+                else:
+                    QMessageBox.warning(dlg, "Ошибка", "Неверный email или пароль")
+            except Exception as e:
+                QMessageBox.critical(dlg, "Ошибка", f"Ошибка при входе: {str(e)}")
+        
+        def open_registration():
+            dlg.close()
+            self.show_registration_window()
+        
+        login_button.clicked.connect(try_login)
+        register_button.clicked.connect(open_registration)
+        
+        button_layout.addWidget(login_button)
+        button_layout.addWidget(register_button)
+        
+        layout.addWidget(email)
+        layout.addWidget(password)
+        layout.addLayout(button_layout)
+        
+        dlg.setLayout(layout)
+        return dlg.exec()
+        
+    def show_registration_window(self):
+        dlg = QDialog(self.window)
+        dlg.setWindowTitle("Регистрация")
+        dlg.resize(400, 200)
+        
+        layout = QVBoxLayout()
+        
+        username = QLineEdit()
+        username.setPlaceholderText("Имя пользователя")
+        
+        email = QLineEdit()
+        email.setPlaceholderText("Email")
+        
+        password = QLineEdit()
+        password.setPlaceholderText("Пароль")
+        password.setEchoMode(QLineEdit.Password)
+        
+        confirm_password = QLineEdit()
+        confirm_password.setPlaceholderText("Подтвердите пароль")
+        confirm_password.setEchoMode(QLineEdit.Password)
+        
+        register_button = QPushButton("Зарегистрироваться")
+        
+        def try_register():
+            if not all([username.text(), email.text(), password.text()]):
+                QMessageBox.warning(dlg, "Ошибка", "Все поля должны быть заполнены")
+                return
+
+            if password.text() != confirm_password.text():
+                QMessageBox.warning(dlg, "Ошибка", "Пароли не совпадают")
+                return
                 
-        except Exception as e:
-            QMessageBox.critical(self.window, "Ошибка", f"Не удалось загрузить задачи: {str(e)}")
+            try:
+                # Проверяем, не занят ли email
+                if self.db.check_email_exists(email.text()):
+                    QMessageBox.warning(dlg, "Ошибка", "�тот email уже зарегистрирован")
+                    return
+                    
+                # Регистрируем пользователя
+                user_data = self.db.register_user(
+                    username.text(),
+                    email.text(),
+                    password.text()
+                )
+                
+                if user_data:
+                    self.current_user = {
+                        'user_id': user_data[0],
+                        'username': user_data[1],
+                        'email': user_data[2],
+                        'created_at': user_data[3]
+                    }
+                    QMessageBox.information(dlg, "Успех", "Регистрация успешно завершена!")
+                    dlg.accept()
+                
+            except Exception as e:
+                QMessageBox.critical(dlg, "Ошибка", f"Ошибка при регистрации: {str(e)}")
+        
+        register_button.clicked.connect(try_register)
+        
+        layout.addWidget(username)
+        layout.addWidget(email)
+        layout.addWidget(password)
+        layout.addWidget(confirm_password)
+        layout.addWidget(register_button)
+        
+        dlg.setLayout(layout)
+        return dlg.exec()
+        

@@ -22,10 +22,11 @@ class Window(QMainWindow):
         self.input_button()
         self.calendar_button()
         self.backlog_button()
-        self.create_project_block()
-
+       # self.create_project_block()
+        self.create_task_button()
         # Отображение окна
         self.showMaximized()
+
 
 
     # Метод для кнопки "Входящие"
@@ -50,49 +51,48 @@ class Window(QMainWindow):
         button.setStyleSheet(self.style_button())
 
     # Метод для создания блока проектов
-    def create_project_block(self):
-        project_block = QFrame(self)
-        project_block.setGeometry(20, 460, 250, 450)
-        project_block.setFrameShape(QFrame.StyledPanel)
-        project_block.setStyleSheet("background-color: #f0f0f0; border: 2px solid #4CAF50;")
-        layout = QVBoxLayout()
+    # def create_project_block(self):
+    #     project_block = QFrame(self)
+    #     project_block.setGeometry(20, 460, 250, 450)
+    #     project_block.setFrameShape(QFrame.StyledPanel)
+    #     project_block.setStyleSheet("background-color: #f0f0f0; border: 2px solid #4CAF50;")
+    #     layout = QVBoxLayout()
 
-        # Список проектов
-        self.project_list_area = QScrollArea(self)
-        self.project_list_area.setWidgetResizable(True)
-        self.project_list_widget = QWidget()
-        self.project_list_layout = QVBoxLayout()
-        self.project_list_widget.setLayout(self.project_list_layout)
-        self.project_list_area.setWidget(self.project_list_widget)
+    #     # Список проектов
+    #     self.project_list_area = QScrollArea(self)
+    #     self.project_list_area.setWidgetResizable(True)
+    #     self.project_list_widget = QWidget()
+    #     self.project_list_layout = QVBoxLayout()
+    #     self.project_list_widget.setLayout(self.project_list_layout)
+    #     self.project_list_area.setWidget(self.project_list_widget)
 
-        layout.addWidget(self.project_list_area)
+    #     layout.addWidget(self.project_list_area)
 
-        # Кнопка добавления проекта
-        self.projects_label = QLabel("Проекты:")
-        layout.addWidget(self.projects_label)
+    #     # Кнопка добавления проекта
+    #     self.projects_label = QLabel("Проекты:")
+    #     layout.addWidget(self.projects_label)
 
-        button = QPushButton("Добавить проект", self)
-        button.clicked.connect(self.func.show_dialog)
-        layout.addWidget(button)
+    #     button = QPushButton("Добавить проект", self)
 
-        project_block.setLayout(layout)
+    #     layout.addWidget(button)
 
-        # Сохранение ссылки на layout для последующего обновления
-        self.project_list_layout = self.project_list_layout
+    #     project_block.setLayout(layout)
 
-        # Обновление списка проектов
-        self.func.update_projects()
+    #     # Сохранение ссылки на layout для последующего обновления
+    #     self.project_list_layout = self.project_list_layout
 
-    # Метод для создания кнопки проекта
-    def create_project_button(self, project):
-        button = QPushButton(project['name'], self)
+    #     # Обновление списка проектов
+    #     self.func.update_projects()
+    
+
+
+    def create_task_button(self):
+        button = QPushButton("Новая задача", self)
+        button.setGeometry(1020, 900, 120, 30)
+        button.clicked.connect(self.func.clicked_create_task)
         button.setStyleSheet(self.style_button())
-        # Привязываем обработчик к кнопке
-        button.clicked.connect(
-            lambda checked, p_id=project['id'], p_name=project['name']: 
-            self.func.handle_project_click(p_id, p_name)
-        )
-        self.project_list_layout.addWidget(button)
+        
+
 
     # Стиль кнопки
     def style_button(self):

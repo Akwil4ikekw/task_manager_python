@@ -1,9 +1,9 @@
-from typing import List,int,str
+from typing import int,str,bool
 from database import Database
 
 
 class Task:
-    def __init__(self, name:str, description:str, status:str, deadline:str, start:str, end:str, project_id:int, task_id:int, hashtags:List[str],priority:int):
+    def __init__(self, name:str,user_id:int, description:str, status:bool, deadline:str, start:str, end:str, team_id:int, project_id:int, task_id:int,priority:int):
         self.name = name
         self.description = description
 
@@ -13,31 +13,10 @@ class Task:
         self.deadline = deadline
         self.start = start
         self.end = end
-
+        self.team_id = team_id
         self.project_id = project_id
         self.task_id = task_id
-        self.hashtags = hashtags
+        self.user_id = user_id
         self.priority = priority
-
         self.db = Database()
     
-    def add_task(self):
-        
-        # Добавляем задачу
-        self.id = self.db.add_task(self)
-
-        # Обработка хэштегов
-        if self.hashtags:
-            for hashtag in self.hashtags:
-                self.db.add_task_hashtag(self.id, hashtag)
-
-    def remove_task(self):
-    
-        if self.id:
-            self.db.remove_task(self.id)
-
-    def update_task(self, **kwargs):
-        self.db.update_task(self.id, **kwargs)
-
-    def __repr__(self):
-        return f"<Task: {self.name}, Status: {self.status}, Priority: {self.priority}, Hashtags: {self.hashtags}>"
