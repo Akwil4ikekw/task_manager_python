@@ -1,22 +1,23 @@
-from typing import int,str,bool
-from database import Database
+# from typing import int,str,bool
+# from database import Database
 
 
 class Task:
-    def __init__(self, name:str,user_id:int, description:str, status:bool, deadline:str, start:str, end:str, team_id:int, project_id:int, task_id:int,priority:int):
-        self.name = name
+    def __init__(self, title: str, description: str, user_id: int, status: bool, 
+                 deadline: float, created_at: float, end: float = None, team_id: int = None, 
+                 project_id: int = None, task_id: int = None, priority: int = 1,
+                 notification_time: float = None, notified: bool = False):
+        self.title = title
         self.description = description
-
-
+        self.user_id = user_id
         self.status = status
-
         self.deadline = deadline
-        self.start = start
+        self.created_at = created_at
         self.end = end
         self.team_id = team_id
         self.project_id = project_id
         self.task_id = task_id
-        self.user_id = user_id
         self.priority = priority
-        self.db = Database()
+        self.notification_time = notification_time if notification_time is not None else deadline
+        self.notified = notified
     
