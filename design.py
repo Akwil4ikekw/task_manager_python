@@ -1,10 +1,13 @@
-from PyQt5.QtWidgets import QMainWindow, QPushButton, QVBoxLayout, QDialog, QLabel, QFrame, QApplication, QScrollArea, QWidget, QLineEdit, QTextEdit, QListWidget, QMessageBox, QHBoxLayout, QTabWidget, QListWidgetItem
-import sys
-from PyQt5.QtCore import Qt 
+import os
+from PyQt5.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QDialog, 
+                            QLabel, QFrame, QApplication, QScrollArea, QWidget, QMessageBox, QHBoxLayout, QLineEdit, QTextEdit, QListWidget)
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon, QPixmap
 from functionality import Functionality
 from Task import Task
 from PIL import Image
 from Team import Team
+from datetime import datetime
 
 
 
@@ -41,15 +44,15 @@ class Window(QMainWindow):
         right_panel = QVBoxLayout()
         
         # Добавляем заголовок
-        title_label = QLabel("Мои задачи")
-        title_label.setStyleSheet("""
+        self.title_label = QLabel("Мои задачи")
+        self.title_label.setStyleSheet("""
             QLabel {
                 font-size: 18px;
                 font-weight: bold;
                 padding: 10px;
             }
         """)
-        right_panel.addWidget(title_label)
+        right_panel.addWidget(self.title_label)
         
         # Создаем область для задач с прокруткой
         scroll_area = QScrollArea()
@@ -61,10 +64,10 @@ class Window(QMainWindow):
             }
         """)
         
-        tasks_widget = QWidget()
-        tasks_layout = QVBoxLayout(tasks_widget)
-        tasks_layout.addStretch()  # Добавляем растягивающийся элемент
-        scroll_area.setWidget(tasks_widget)
+        self.tasks_widget = QWidget()
+        self.tasks_layout = QVBoxLayout(self.tasks_widget)
+        self.tasks_layout.addStretch()
+        scroll_area.setWidget(self.tasks_widget)
         
         right_panel.addWidget(scroll_area)
         
@@ -218,68 +221,133 @@ class Window(QMainWindow):
         """
 
     def create_user_panel(self):
-        # Создаем панель пользователя
-        self.user_panel = QFrame()  # Сохраняем в self.user_panel
-        self.user_panel.setFrameStyle(QFrame.StyledPanel)
-        
-        # Создаем фрейм для панели пользователя
-        user_panel = QFrame(self)
-        user_panel.setGeometry(20, 20, 200, 200)
-        user_panel.setStyleSheet("""
+        """Создание панели пользователя"""
+        self.user_panel = QFrame()
+        self.user_panel.setStyleSheet("""
             QFrame {
-                background-color: #f0f0f0;
-                border: 2px solid #4CAF50;
+                background-color: white;
+                border: 1px solid #ddd;
                 border-radius: 5px;
+                margin: 5px;
+                padding: 10px;
             }
         """)
-
-        # Создаем layout для панели
-        layout = QVBoxLayout(user_panel)
-
-        # Добавляем метку "Пользователь:"
-        title_label = QLabel("Пользователь:", user_panel)
-        title_label.setStyleSheet("""
+        
+        user_layout = QVBoxLayout(self.user_panel)
+        
+        # Иконка пользователя
+        icon_label = QLabel()
+        icon_path = "icons_team/user.pnjyb g"
+        
+        # Проверяем существование файла иконки
+        if os.path.exists(icon_path):
+            icon_pixmap = QPixmap(icon_path)
+            if not icon_pixmap.isNull():
+                icon_pixmap = icon_pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                icon_label.setPixmap(icon_pixmap)
+        else:
+            print(f"Иконка не найдена: {icon_path}")
+            icon_label.setText("👤")
+            icon_label.setStyleSheet("""
+                QLabel {
+                    font-size: 32px;
+                    color: #666;
+                }
+            """)
+        
+        icon_label.setAlignment(Qt.AlignCenter)
+        user_layout.addWidget(icon_label)
+        
+        # Метка для отображения имени пользователя
+        self.user_label = QLabel("Гость")
+        self.user_label.setStyleSheet("""
             QLabel {
                 color: #333;
-                font-weight: bold;
                 font-size: 14px;
-            }
-        """)
-        layout.addWidget(title_label)
-
-        # Добавляем имя пользователя
-        self.username_label = QLabel("Не авторизован", user_panel)
-        self.username_label.setStyleSheet("""
-            QLabel {
-                color: #4CAF50;
-                font-size: 12px;
+                font-weight: bold;
                 padding: 5px;
             }
         """)
-        layout.addWidget(self.username_label)
-
-        # Кнопка управления командами
-        teams_button = QPushButton("Управление командами", user_panel)
-        teams_button.clicked.connect(self.func.click_teams_button)
-        teams_button.setStyleSheet(self.style_button())
-        layout.addWidget(teams_button)
-
-        # Кнопка выхода
-        logout_button = QPushButton("Выйти", user_panel)
-        logout_button.clicked.connect(self.logout)
-        logout_button.setStyleSheet(self.style_button())
-        layout.addWidget(logout_button)
-
-        layout.addStretch()
-        user_panel.setLayout(layout)
+        self.user_label.setAlignment(Qt.AlignCenter)
+        user_layout.addWidget(self.user_label)
+        
+        # Метка для отображения email
+        self.email_label = QLabel("")
+        self.email_label.setStyleSheet("""
+            QLabel {
+                color: #666;
+                font-size: 12px;
+                padding: 2px;
+            }
+        """)
+        self.email_label.setAlignment(Qt.AlignCenter)
+        user_layout.addWidget(self.email_label)
+        
+        # Разделительная линия
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("background-color: #ddd;")
+        user_layout.addWidget(line)
+        
+        # Кнопка входа/выхода
+        self.login_button = QPushButton("Войти")
+        self.login_button.setStyleSheet(self.style_button())
+        self.login_button.clicked.connect(self.handle_auth)
+        user_layout.addWidget(self.login_button)
+        
+        user_layout.addStretch()
 
     def update_user_panel(self):
-        """Обновляет информацию о пользователе на панели"""
-        current_user = self.func.get_current_user()
-        if current_user:
-            self.username_label.setText(f"{current_user['username']}\n{current_user['email']}")
+        """Обновление панели пользователя"""
+        if self.func.is_authenticated():
+            # Обновляем информацию о пользователе
+            user = self.func.get_current_user()
+            self.user_label.setText(user['username'])
+            self.email_label.setText(user['email'])
+            self.email_label.setVisible(True)
+            
+            # Обновляем кнопку
+            self.login_button.setText("Выйти")
+            try:
+                self.login_button.clicked.disconnect()
+            except:
+                pass
+            self.login_button.clicked.connect(self.handle_logout)
         else:
-            self.username_label.setText("Не авторизован")
+            # Сбрасываем на состояние "гость"
+            self.user_label.setText("Гость")
+            self.email_label.setText("")
+            self.email_label.setVisible(False)
+            
+            # Обновляем кнопку
+            self.login_button.setText("Войти")
+            try:
+                self.login_button.clicked.disconnect()
+            except:
+                pass
+            self.login_button.clicked.connect(self.handle_auth)
+
+    def handle_auth(self):
+        """Обработка входа в систему"""
+        self.func.show_login_window()
+
+    def handle_logout(self):
+        """Обработка выхода из системы"""
+        try:
+            self.func.logout()
+            self.update_user_panel()
+            # Очищаем список задач при выходе
+            for i in reversed(range(self.tasks_layout.count())): 
+                widget = self.tasks_layout.itemAt(i).widget()
+                if widget is not None:
+                    widget.deleteLater()
+            # Сбрасываем заголовок
+            self.title_label.setText("Мои задачи")
+        except Exception as e:
+            print(f"Ошибка при выходе: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def logout(self):
         """Обработчик выхода из системы"""
@@ -401,6 +469,91 @@ class Window(QMainWindow):
         cancel_btn.clicked.connect(dialog.reject)
         
         dialog.exec_()
+
+    def display_project_tasks(self, project_id, project_name):
+        """Отображение задач проекта"""
+        print(f"\n=== Отображение задач для проекта {project_name} (ID: {project_id}) ===")
+        
+        # Очищаем текущий layout
+        for i in reversed(range(self.tasks_layout.count())): 
+            widget = self.tasks_layout.itemAt(i).widget()
+            if widget is not None:
+                widget.deleteLater()
+        
+        # Обновляем заголовок
+        self.title_label.setText(f"Задачи проекта: {project_name}")
+        
+        # Получаем задачи проекта
+        tasks = self.func.db.get_project_tasks(project_id)
+        print(f"Получено задач: {len(tasks)}")
+        
+        if tasks:
+            print("Начинаем отображение задач")
+            for task in tasks:
+                print(f"\nОтображение задачи: {task.title}")
+                task_widget = QFrame()
+                task_widget.setStyleSheet("""
+                    QFrame {
+                        background-color: white;
+                        border: 1px solid #ddd;
+                        border-radius: 5px;
+                        margin: 5px;
+                        padding: 10px;
+                    }
+                """)
+                
+                task_layout = QVBoxLayout(task_widget)
+                
+                # Название задачи
+                task_name = QLabel(task.title)
+                task_name.setStyleSheet("font-weight: bold;")
+                task_layout.addWidget(task_name)
+                
+                # Описание задачи
+                if task.description:
+                    task_desc = QLabel(task.description)
+                    task_layout.addWidget(task_desc)
+                
+                # Дедлайн
+                if task.deadline:
+                    deadline_label = QLabel(f"Дедлайн: {task.deadline}")
+                    task_layout.addWidget(deadline_label)
+                
+                self.tasks_layout.addWidget(task_widget)
+                print(f"Задача {task.title} добавлена в layout")
+        else:
+            print("Задач не найдено, отображаем сообщение")
+            # Если задач нет, показываем сообщение
+            no_tasks_label = QLabel("В этом проекте пока нет задач")
+            no_tasks_label.setAlignment(Qt.AlignCenter)
+            no_tasks_label.setStyleSheet("""
+                QLabel {
+                    color: #666;
+                    padding: 20px;
+                    font-size: 14px;
+                }
+            """)
+            self.tasks_layout.addWidget(no_tasks_label)
+        
+        # Добавляем растягивающийся элемент в конец
+        self.tasks_layout.addStretch()
+        print("=== Завершено отображение задач ===\n")
+
+    def update_select_team_button(self):
+        """Обновление кнопки выбора команды"""
+        if self.func.is_authenticated() and self.func.get_current_team():
+            team = self.func.get_current_team()
+            self.select_team_button.setText(f"Команда: {team['name']}")
+        else:
+            self.select_team_button.setText("Выбрать команду")
+
+    def clear_team_photo(self):
+        # Очищаем путь к фото
+        self.team_photo_path = ""
+        # Очищаем предпросмотр фото (если есть)
+        self.photo_preview_label.clear()
+        # Можно установить текст по умолчанию или иконку
+        self.photo_preview_label.setText("Фото не выбрано")
 
 class CreateTeamDialog(QDialog):
     def __init__(self, parent=None):
