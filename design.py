@@ -52,6 +52,28 @@ class Window(QMainWindow):
                 background-color: #e0e0e0;
             }
         """)
+
+
+        self.notification_btn = QPushButton("🔔", self)
+        self.notification_btn.setFixedSize(32, 32)
+        self.notification_btn.setStyleSheet("""
+            QPushButton {
+                border: none;
+                border-radius: 16px;
+                background-color: transparent;
+                font-size: 18px;
+                margin: 10px;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+        """)
+        self.notification_btn.clicked.connect(self.show_notifications)
+        self.notification_btn.move(self.width() - 50, 10)  # Позиционируем в правом верхнем углу
+        
+
+
+        
         self.select_team_button.clicked.connect(self.func.click_teams_button)
         left_panel.addWidget(self.select_team_button)
         
@@ -112,6 +134,15 @@ class Window(QMainWindow):
         
         # Устанавливаем размер окна
         self.resize(1200, 800)
+
+
+    def resizeEvent(self, event):
+        """Обработка изменения размера окна"""
+        super().resizeEvent(event)
+        # Обновляем позицию кнопки уведомлений при изменении размера окна
+        if hasattr(self, 'notification_btn'):
+            self.notification_btn.move(self.width() - 50, 10)
+
 
     def create_nav_buttons(self, layout):
         """Создание кнопок навигации"""
@@ -693,13 +724,13 @@ class Window(QMainWindow):
             # Распределяем задачи по колонкам
             for task in tasks:
                 print(f"Добавление задачи: {task.title} (Статус: {task.status}, Приоритет: {task.priority})")
-                if task.status == True:
+                if task.status == 2:
+
                     kanban.add_task(task, "completed")
+                elif task.status == 1:
+                    kanban.add_task(task, "backlog")
                 else:
-                    if task.priority <= 2:
-                        kanban.add_task(task, "backlog")
-                    else:
-                        kanban.add_task(task, "new")
+                    kanban.add_task(task, "new")
             
             # Добавляем канбан доску в layout
             print("Добавление канбан доски в layout")
@@ -739,6 +770,110 @@ class Window(QMainWindow):
         """)
         self.tasks_layout.addWidget(placeholder)
         self.tasks_layout.addStretch()
+
+    def show_notifications(self):
+        """Показать историю всех изменений"""
+        try:
+            if not self.func.is_authenticated():
+                QMessageBox.warning(self, "Ошибка", "Необходимо войти в систему")
+                return
+            
+            dialog = QDialog(self)
+            dialog.setWindowTitle("История изменений")
+            dialog.resize(700, 500)
+            layout = QVBoxLayout()
+
+            # Создаем виджет для отображения истории
+            history_widget = QTextEdit()
+            history_widget.setReadOnly(True)
+            history_widget.setStyleSheet("""
+                QTextEdit {
+                    background-color: #f5f5f5;
+                    border: 1px solid #ddd;
+                    padding: 10px;
+                    font-family: Arial;
+                }
+            """)
+
+            # Получаем историю всех задач пользователя
+            history = self.func.db.get_all_task_history(self.func.current_user['user_id'])
+            
+            if not history:
+                history_widget.setText("История изменений пуста")
+            else:
+                html_content = "<style>"
+                html_content += "p { margin: 5px 0; }"
+                html_content += ".timestamp { color: #666; font-size: 0.9em; }"
+                html_content += ".task-title { color: #2196F3; font-weight: bold; }"
+                html_content += ".username { color: #4CAF50; font-weight: bold; }"
+                html_content += ".change { margin-left: 20px; color: #333; }"
+                html_content += "hr { margin: 10px 0; border: none; border-top: 1px solid #ddd; }"
+                html_content += "</style>"
+
+                for record in history:
+                    (task_title, changed_at, username, old_status, new_status,
+                     old_priority, new_priority, old_deadline, new_deadline,
+                     old_description, new_description, comment_text) = record
+
+                    html_content += f"<h3 class='task-title'>{task_title}</h3>"
+                    html_content += f"<p><span class='timestamp'>{changed_at.strftime('%d.%m.%Y %H:%M')}</span> - "
+                    html_content += f"<span class='username'>{username}</span></p>"
+
+                    # Статус
+                    if old_status != new_status:
+                        old_status_text = "Выполнено" if old_status else "Не выполнено"
+                        new_status_text = "Выполнено" if new_status else "Не выполнено"
+                        html_content += f"<p class='change'>Статус: {old_status_text} → {new_status_text}</p>"
+
+                    # Приоритет
+                    if old_priority != new_priority:
+                        priority_names = {1: "Низкий", 2: "Средний", 3: "Высокий"}
+                        old_priority_text = priority_names.get(old_priority, "Не указан")
+                        new_priority_text = priority_names.get(new_priority, "Не указан")
+                        html_content += f"<p class='change'>Приоритет: {old_priority_text} → {new_priority_text}</p>"
+
+                    # Дедлайн
+                    if old_deadline != new_deadline:
+                        old_deadline_text = old_deadline.strftime('%d.%m.%Y') if old_deadline else "Не указан"
+                        new_deadline_text = new_deadline.strftime('%d.%m.%Y') if new_deadline else "Не указан"
+                        html_content += f"<p class='change'>Дедлайн: {old_deadline_text} → {new_deadline_text}</p>"
+
+                    # Описание
+                    if old_description != new_description:
+                        html_content += f"<p class='change'>Описание было изменено</p>"
+
+                    # Комментарий
+                    if comment_text:
+                        html_content += f"<p class='change'>Комментарий: {comment_text}</p>"
+
+                    html_content += "<hr>"
+
+                history_widget.setHtml(html_content)
+
+            layout.addWidget(history_widget)
+
+            # Кнопка закрытия
+            close_btn = QPushButton("Закрыть")
+            close_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
+            """)
+            close_btn.clicked.connect(dialog.accept)
+            layout.addWidget(close_btn)
+
+            dialog.setLayout(layout)
+            dialog.exec_()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при отображении истории: {str(e)}")
 
 class CreateTeamDialog(QDialog):
     def __init__(self, parent=None):

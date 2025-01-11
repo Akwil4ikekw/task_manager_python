@@ -121,13 +121,11 @@ class KanbanCard(QFrame):
             new_status = None
             
             if current_status == 0:
-                new_status = 1  # Новая -> В работе
+                new_status = 2  # Новая -> Выполнено
             elif current_status == 1:
                 new_status = 2  # В работе -> Завершено
             elif current_status == 2:
                 new_status = 0  # Завершено -> Новая
-            else:
-                new_status = 0  # Неизвестный статус -> Новая
             
             print(f"[DEBUG] Изменение статуса задачи {self.task.task_id}: {current_status} -> {new_status}")
             
@@ -145,6 +143,7 @@ class KanbanCard(QFrame):
                         main_window = current
                         break
                 
+                
                 if main_window:
                     print("[DEBUG] Найдено главное окно, обновляем доску")
                     main_window.func.click_input_button()
@@ -159,6 +158,7 @@ class KanbanCard(QFrame):
     def edit_task(self):
         """Редактирование задачи"""
         try:
+            print("[DEBUG] Начало редактирования задачи")
             dialog = QDialog(self)
             dialog.setWindowTitle("Редактирование задачи")
             layout = QVBoxLayout(dialog)
@@ -198,17 +198,37 @@ class KanbanCard(QFrame):
             buttons.addWidget(cancel_btn)
             layout.addLayout(buttons)
             
+            print("[DEBUG] Отображение диалога редактирования задачи")
             if dialog.exec_() == QDialog.Accepted:
+                print("[DEBUG] Диалог принят, обновление задачи")
                 from database import Database
                 db = Database()
+                # Обновляем атрибуты задачи
+                self.task.title = title_edit.text()
+                self.task.description = desc_edit.toPlainText()
+                self.task.deadline = deadline_edit.dateTime().toPyDateTime()
+                self.task.priority = priority_edit.value()
+                
+                # Отладочные сообщения перед обновлением в базе данных
+                print(f"[DEBUG] Обновленные данные задачи: Название='{self.task.title}', Описание='{self.task.description}', Дедлайн='{self.task.deadline}', Приоритет='{self.task.priority}'")
+                
+                # Сохраняем изменения в базе данных
                 if db.update_task(self.task):
+                    print("[DEBUG] Задача успешно обновлена в базе данных")
                     # Обновляем через главное окно
                     from design import Window
                     main_window = self.window()
                     if isinstance(main_window, Window):
-                        main_window.click_input_button()
+                        main_window.func.click_input_button()
+                        print("[DEBUG] Канбан доска обновлена")
+                    else:
+                        print("[ERROR] Не удалось найти главное окно")
+                else:
+                    print("[ERROR] Не удалось обновить задачу в базе данных")
+            else:
+                print("[DEBUG] Диалог редактирования отменен пользователем")
         except Exception as e:
-            print(f"Ошибка при редактировании задачи: {e}")
+            print(f"[ERROR] Ошибка при редактировании задачи: {e}")
     
     def delete_task(self):
         """Удаление задачи"""
@@ -249,6 +269,83 @@ class KanbanCard(QFrame):
             mime.setText(str(self.task.task_id))
             drag.setMimeData(mime)
             drag.exec_(Qt.MoveAction)
+    
+    def show_history(self):
+        """Показать историю изменений задачи"""
+        try:
+            # Получаем главное окно
+            main_window = None
+            parent = self.parent()
+            while parent:
+                if isinstance(parent, QMainWindow):
+                    main_window = parent
+                    break
+                parent = parent.parent()
+            
+            if main_window and hasattr(main_window, 'func'):
+                # Получаем историю задачи
+                history = main_window.func.db.get_task_history(self.task.task_id)
+                
+                dialog = QDialog(self)
+                dialog.setWindowTitle(f"История изменений задачи: {self.task.title}")
+                dialog.resize(500, 400)
+                layout = QVBoxLayout()
+
+                # Создаем виджет для отображения истории
+                history_widget = QTextEdit()
+                history_widget.setReadOnly(True)
+                history_widget.setStyleSheet("""
+                    QTextEdit {
+                        background-color: #f5f5f5;
+                        border: 1px solid #ddd;
+                        padding: 10px;
+                    }
+                """)
+
+                if not history:
+                    history_widget.setText("История изменений пуста")
+                else:
+                    html_content = ""
+                    for record in history:
+                        timestamp = record[1].strftime("%d.%m.%Y %H:%M")
+                        username = record[2]
+                        html_content += f"<p><b>{timestamp}</b> - {username}</p>"
+                        
+                        # Добавляем информацию об изменениях
+                        changes = []
+                        if record[3] != record[4]:  # status changed
+                            changes.append("Статус изменен")
+                        if record[5] != record[6]:  # priority changed
+                            changes.append("Приоритет изменен")
+                        if record[7] != record[8]:  # deadline changed
+                            changes.append("Срок изменен")
+                        if record[9] != record[10]:  # description changed
+                            changes.append("Описание изменено")
+                        
+                        if changes:
+                            html_content += "<ul>"
+                            for change in changes:
+                                html_content += f"<li>{change}</li>"
+                            html_content += "</ul>"
+                        
+                        html_content += "<hr>"
+                    
+                    history_widget.setHtml(html_content)
+
+                layout.addWidget(history_widget)
+                
+                # Кнопка закрытия
+                close_btn = QPushButton("Закрыть")
+                close_btn.clicked.connect(dialog.accept)
+                layout.addWidget(close_btn)
+
+                dialog.setLayout(layout)
+                dialog.exec_()
+            else:
+                QMessageBox.warning(self, "Ошибка", "Не удалось открыть историю")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при открытии истории: {str(e)}")
 
 class KanbanColumn(QWidget):
     def __init__(self, title, status):
@@ -393,6 +490,7 @@ class KanbanBoard(QWidget):
                 elif status == 1:
                     print(f"[DEBUG] Задача {task.task_id} -> В работе")
                     self.backlog.add_card(task)
+                
                 elif status == 2:
                     print(f"[DEBUG] Задача {task.task_id} -> Завершенные")
                     self.completed.add_card(task)

@@ -158,6 +158,11 @@ class Functionality:
             team_widget.setLayout(team_layout)
             layout.addWidget(team_widget)
 
+        # Кнопка создания новой команды
+        create_team_btn = QPushButton("Создать команду")
+        create_team_btn.clicked.connect(self.show_create_team_dialog)
+        layout.addWidget(create_team_btn)
+
         teams_dialog.setLayout(layout)
         teams_dialog.exec_()
 
@@ -456,7 +461,7 @@ class Functionality:
         
         dlg.setLayout(layout)
         dlg.exec_()
-        
+            
     def create_team_dialog(self):
         """Диалог создания команды"""
         if not self.is_authenticated():
@@ -479,7 +484,6 @@ class Functionality:
         
         # Аватар команды
         avatar_layout = QHBoxLayout()
-        # Определяем avatar_path в правильной области видимости
         avatar_path = [""]  # Используем список для возможности изменения из вложенных функций
         
         avatar_preview = QLabel()
@@ -499,19 +503,16 @@ class Functionality:
                 try:
                     # Проверяем и обрабатываем изображение
                     with Image.open(file_name) as img:
-                        # Конвертируем в RGB если изображение в другом формате
                         if img.mode != 'RGB':
                             img = img.convert('RGB')
-                        # Создаем миниатюру
                         img.thumbnail((100, 100))
-                        # Сохраняем путь
                         avatar_path[0] = file_name
-                        # Показываем превью
                         pixmap = QPixmap(file_name)
                         avatar_preview.setPixmap(pixmap.scaled(100, 100, Qt.KeepAspectRatio))
                 except Exception as e:
                     QMessageBox.warning(dlg, "Ошибка", f"Ошибка при загрузке изображения: {str(e)}")
-        
+       
+
         def clear_avatar():
             avatar_path[0] = ""
             avatar_preview.setText("Нет аватара")
@@ -524,6 +525,7 @@ class Functionality:
         
         avatar_layout.addWidget(avatar_preview)
         avatar_buttons = QVBoxLayout()
+        
         avatar_buttons.addWidget(select_avatar_btn)
         avatar_buttons.addWidget(clear_avatar_btn)
         avatar_layout.addLayout(avatar_buttons)
@@ -533,14 +535,23 @@ class Functionality:
         buttons_layout = QHBoxLayout()
         create_btn = QPushButton("Создать")
         cancel_btn = QPushButton("Отмена")
-        create_btn.setStyleSheet(self.window.style_button())
-        cancel_btn.setStyleSheet(self.window.style_button())
         
-        def try_create_team():
+        create_btn.clicked.connect(lambda: try_create_team(dlg, name_edit, desc_edit, avatar_path))
+        cancel_btn.clicked.connect(dlg.reject)
+        
+        buttons_layout.addWidget(create_btn)
+        buttons_layout.addWidget(cancel_btn)
+        layout.addLayout(buttons_layout)
+        
+        dlg.setLayout(layout)
+        dlg.exec_()
+
+        def try_create_team(dlg, name_edit, desc_edit, avatar_path):
+            """Попытка создать команду"""
             if not name_edit.text():
                 QMessageBox.warning(dlg, "Ошибка", "Введите название команды")
                 return
-            
+
             try:
                 print("\n=== Создание команды ===")
                 print(f"Текущий пользователь: {self.current_user}")
@@ -553,21 +564,16 @@ class Functionality:
                 if avatar_path[0]:
                     try:
                         avatar_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "team_avatars")
-                        print(f"Директория для аватаров: {avatar_dir}")
-                        
                         if not os.path.exists(avatar_dir):
                             os.makedirs(avatar_dir)
-                            print("Создана директория для аватаров")
                         
                         extension = os.path.splitext(avatar_path[0])[1]
                         final_avatar_path = os.path.join(
                             avatar_dir, 
                             f"team_avatar_{datetime.now().strftime('%Y%m%d_%H%M%S')}{extension}"
                         )
-                        print(f"Путь сохранения аватара: {final_avatar_path}")
                         
                         shutil.copy2(avatar_path[0], final_avatar_path)
-                        print("Аватар успешно скопирован")
                     except Exception as avatar_error:
                         print(f"Ошибка при сохранении аватара: {avatar_error}")
                         final_avatar_path = None
@@ -586,59 +592,38 @@ class Functionality:
                     self.click_teams_button()
                 else:
                     QMessageBox.warning(dlg, "Ошибка", "Не удалось создать команду")
-                    
             except Exception as e:
-                print(f"Ошибка при создании команды: {e}")
-                import traceback
-                traceback.print_exc()
-                QMessageBox.critical(dlg, "Ошибка", f"Ошибка при создании команды: {str(e)}")
-        
-        create_btn.clicked.connect(try_create_team)
-        cancel_btn.clicked.connect(dlg.reject)
-        
-        buttons_layout.addWidget(create_btn)
-        buttons_layout.addWidget(cancel_btn)
-        layout.addLayout(buttons_layout)
-        
-        dlg.setLayout(layout)
-        dlg.exec_()
+                QMessageBox.critical(dlg, "Ошибка", f"Произошла ошибка: {str(e)}")
+                
+        def on_team_selected(self, team_id: int, team_name: str):
+            """Обработка выбора команды"""
+            print(f"Выбрана команда: {team_name} (ID: {team_id})")
+            self.show_team_dialog(team_id, team_name)
 
-    def on_team_selected(self, team_id: int, team_name: str):
-        """Обработка выбора команды"""
-        print(f"Выбрана команда: {team_name} (ID: {team_id})")
-        self.show_team_dialog(team_id, team_name)
-
-    def update_team_dialog_content(self, team_id: int, team_name: str):
-        """Обновление содержимого диалога команды"""
-        if hasattr(self, 'team_dialog') and self.team_dialog is not None:
-            # Обновляем список проектов
-            projects = self.db.get_team_projects(team_id)
-            if hasattr(self, 'projects_list'):
-                self.projects_list.clear()
-                if projects:
-                    for project in projects:
-                        project_id, name, description, created_at = project
-                        item = QListWidgetItem(f"{name}")
-                        if description:
-                            item.setToolTip(description)
-                        item.setData(Qt.UserRole, project_id)
-                        item.setData(Qt.UserRole + 1, name)
-                        self.projects_list.addItem(item)
+        def update_team_dialog_content(self, team_id: int, team_name: str):
+            """Обновление содержимого диалога команды"""
+            if hasattr(self, 'team_dialog') and self.team_dialog is not None:
+                # Обновляем список проектов
+                projects = self.db.get_team_projects(team_id)
+                if hasattr(self, 'projects_list'):
+                    self.projects_list.clear()
+                    if projects:
+                        for project in projects:
+                            project_id, name, description, created_at = project
+                            item = QListWidgetItem(f"{name}")
+                            if description:
+                                item.setToolTip(description)
+                            item.setData(Qt.UserRole, project_id)
+                            item.setData(Qt.UserRole + 1, name)
+                            self.projects_list.addItem(item)
 
     def show_team_dialog(self, team_id: int, team_name: str):
-        """Показ диалога команды"""
-        if hasattr(self, 'team_dialog') and self.team_dialog is not None:
-            self.team_dialog.close()
-        
-        print(f"Открываем диалог команды: {team_name}")
-        
+        """Показать диалог команды"""
         self.team_dialog = QDialog(self.window)
         self.team_dialog.setWindowTitle(f"Команда: {team_name}")
-        self.team_dialog.resize(600, 400)
-        
         layout = QVBoxLayout()
         
-        # Верхняя панель с кнопками управления командой
+        # Верхняя панель с кнопками
         top_panel = QHBoxLayout()
         
         # Кнопка приглашения участников
@@ -745,10 +730,10 @@ class Functionality:
                     QMessageBox.information(dlg, "Успех", "Проект успешно создан!")
                     dlg.accept()
                     
-                    # Обновляем список проектов, вызывая on_team_selected
-                    team_name = self.db.get_team_name(team_id)  # Нужно добавить этот метод в Database
+                    # Обновляем содержимое диалога команды
+                    team_name = self.db.get_team_name(team_id)
                     if team_name:
-                        self.on_team_selected(team_id, team_name)
+                        self.update_team_dialog_content(team_id, team_name)
                 else:
                     QMessageBox.warning(dlg, "Ошибка", "Не удалось создать проект")
             except Exception as e:
@@ -809,9 +794,9 @@ class Functionality:
         dlg.setLayout(layout)
         dlg.exec_()
 
-    def on_project_selected(self, project_id, project_name):
+    def on_project_selected(self, project_id: int, project_name: str):
         """Обработка выбора проекта"""
-        self.window.current_project_id = project_id  # Сохраняем ID текущего проекта
+        self.window.current_project_id = project_id
         self.window.display_project_tasks(project_id, project_name)
 
     def login_user(self, email: str, password: str):
@@ -932,11 +917,441 @@ class Functionality:
         except Exception as e:
             QMessageBox.critical(self.window, "Ошибка", f"Произошла ошибка: {str(e)}")
 
+    def show_create_team_dialog(self):
+        """Показать диалог создания новой команды"""
+        try:
+            dialog = QDialog(self.window)
+            dialog.setWindowTitle("Создание новой команды")
+            layout = QVBoxLayout(dialog)
+            
+            # Название команды
+            name_edit = QLineEdit()
+            name_edit.setPlaceholderText("Название команды")
+            layout.addWidget(QLabel("Название команды:"))
+            layout.addWidget(name_edit)
+            
+            # Описание команды
+            description_edit = QTextEdit()
+            description_edit.setPlaceholderText("Описание команды")
+            layout.addWidget(QLabel("Описание команды:"))
+            layout.addWidget(description_edit)
+            
+            # Добавляем секцию для аватара
+            avatar_layout = QHBoxLayout()
+            avatar_preview = QLabel()
+            avatar_preview.setFixedSize(100, 100)
+            avatar_preview.setStyleSheet("border: 1px solid #ccc;")
+            avatar_preview.setAlignment(Qt.AlignCenter)
+            avatar_preview.setText("Нет аватара")
+            
+            avatar_path = [""]  # Используем список для возможности изменения в lambda-функциях
+            
+            def select_avatar():
+                file_name, _ = QFileDialog.getOpenFileName(
+                    dialog,
+                    "Выберите аватар команды",
+                    "",
+                    "Изображения (*.png *.jpg *.jpeg)"
+                )
+                if file_name:
+                    try:
+                        # Создаем директорию для аватаров, если её нет
+                        avatar_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "team_avatars")
+                        if not os.path.exists(avatar_dir):
+                            os.makedirs(avatar_dir)
+                        
+                        # Копируем и сохраняем изображение
+                        new_avatar_path = os.path.join(
+                            avatar_dir, 
+                            f"team_avatar_{datetime.now().strftime('%Y%m%d_%H%M%S')}{os.path.splitext(file_name)[1]}"
+                        )
+                        shutil.copy2(file_name, new_avatar_path)
+                        
+                        # Обновляем превью
+                        pixmap = QPixmap(new_avatar_path)
+                        avatar_preview.setPixmap(pixmap.scaled(100, 100, Qt.KeepAspectRatio))
+                        avatar_path[0] = new_avatar_path
+                        
+                    except Exception as e:
+                        QMessageBox.warning(dialog, "Ошибка", f"Ошибка при загрузке аватара: {str(e)}")
+            
+            def clear_avatar():
+                avatar_path[0] = ""
+                avatar_preview.setText("Нет аватара")
+                avatar_preview.setPixmap(QPixmap())
+            
+            # Кнопки управления аватаром
+            avatar_buttons = QVBoxLayout()
+            select_avatar_btn = QPushButton("Выбрать аватар")
+            clear_avatar_btn = QPushButton("Убрать аватар")
+            
+            select_avatar_btn.clicked.connect(select_avatar)
+            clear_avatar_btn.clicked.connect(clear_avatar)
+            
+            avatar_buttons.addWidget(select_avatar_btn)
+            avatar_buttons.addWidget(clear_avatar_btn)
+            
+            avatar_layout.addWidget(avatar_preview)
+            avatar_layout.addLayout(avatar_buttons)
+            layout.addLayout(avatar_layout)
+            
+            # Кнопки создания/отмены
+            buttons_layout = QHBoxLayout()
+            create_btn = QPushButton("Создать")
+            cancel_btn = QPushButton("Отмена")
+            
+            def try_create_team():
+                if not name_edit.text():
+                    QMessageBox.warning(dialog, "Ошибка", "Введите название команды")
+                    return
+                
+                try:
+                    team_id = self.db.create_team(
+                        name_edit.text(),
+                        description_edit.toPlainText(),
+                        self.current_user['user_id'],
+                        avatar_path[0] if avatar_path[0] else None
+                    )
+                    
+                    if team_id:
+                        QMessageBox.information(dialog, "Успех", "Команда успешно создана!")
+                        dialog.accept()
+                        # Обновляем список команд
+                        self.click_teams_button()
+                    else:
+                        QMessageBox.warning(dialog, "Ошибка", "Не удалось создать команду")
+                except Exception as e:
+                    QMessageBox.critical(dialog, "Ошибка", f"Произошла ошибка: {str(e)}")
+            
+            create_btn.clicked.connect(try_create_team)
+            cancel_btn.clicked.connect(dialog.reject)
+            
+            buttons_layout.addWidget(create_btn)
+            buttons_layout.addWidget(cancel_btn)
+            layout.addLayout(buttons_layout)
+            
+            dialog.setLayout(layout)
+            dialog.exec_()
+            
+        except Exception as e:
+            QMessageBox.critical(self.window, "Ошибка", f"Не удалось создать команду: {str(e)}")
+
+    def show_edit_project_dialog(self, project_id: int):
+        """Диалог редактирования проекта"""
+        try:
+            project_info = self.db.get_project_info(project_id)
+            if not project_info:
+                QMessageBox.warning(self.window, "Ошибка", "Проект не найден")
+                return
+
+            dialog = QDialog(self.window)
+            dialog.setWindowTitle(f"Редактирование проекта: {project_info['name']}")
+            layout = QVBoxLayout()
+
+            # Название проекта
+            name_label = QLabel("Название:")
+            name_edit = QLineEdit(project_info['name'])
+            layout.addWidget(name_label)
+            layout.addWidget(name_edit)
+
+            # Описание проекта
+            desc_label = QLabel("Описание:")
+            desc_edit = QTextEdit()
+            desc_edit.setText(project_info['description'] or "")
+            layout.addWidget(desc_label)
+            layout.addWidget(desc_edit)
+
+            # Кнопки
+            buttons_layout = QHBoxLayout()
+            
+            # Кнопка сохранения
+            save_btn = QPushButton("Сохранить")
+            save_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
+            """)
+
+            # Кнопка удаления
+            delete_btn = QPushButton("Удалить проект")
+            delete_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #f44336;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: #da190b;
+                }
+            """)
+
+            def save_changes():
+                try:
+                    if self.db.update_project(
+                        project_id,
+                        name_edit.text(),
+                        desc_edit.toPlainText()
+                    ):
+                        QMessageBox.information(dialog, "Успех", "Изменения сохранены")
+                        dialog.accept()
+                        # Обновляем диалог команды
+                        if hasattr(self, 'team_dialog'):
+                            self.update_team_dialog_content(
+                                project_info['team_id'],
+                                self.db.get_team_name(project_info['team_id'])
+                            )
+                    else:
+                        QMessageBox.warning(dialog, "Ошибка", "Не удалось сохранить изменения")
+                except Exception as e:
+                    QMessageBox.critical(dialog, "Ошибка", f"Произошла ошибка: {str(e)}")
+
+            def delete_project():
+                reply = QMessageBox.question(
+                    dialog,
+                    'Подтверждение',
+                    'Вы уверены, что хотите удалить этот проект?\nВсе связанные задачи также будут удалены.',
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                
+                if reply == QMessageBox.Yes:
+                    try:
+                        if self.db.delete_project(project_id):
+                            QMessageBox.information(dialog, "Успех", "Проект удален")
+                            dialog.accept()
+                            # Обновляем диалог команды
+                            if hasattr(self, 'team_dialog'):
+                                self.update_team_dialog_content(
+                                    project_info['team_id'],
+                                    self.db.get_team_name(project_info['team_id'])
+                                )
+                        else:
+                            QMessageBox.warning(dialog, "Ошибка", "Не удалось удалить проект")
+                    except Exception as e:
+                        QMessageBox.critical(dialog, "Ошибка", f"Произошла ошибка: {str(e)}")
+
+            save_btn.clicked.connect(save_changes)
+            delete_btn.clicked.connect(delete_project)
+
+            buttons_layout.addWidget(save_btn)
+            buttons_layout.addWidget(delete_btn)
+            layout.addLayout(buttons_layout)
+
+            dialog.setLayout(layout)
+            dialog.exec_()
+
+        except Exception as e:
+            QMessageBox.critical(self.window, "Ошибка", f"Ошибка при открытии диалога: {str(e)}")
+
+    def show_login_window(self):
+        """Показать окно авторизации"""
+        try:
+            login_dialog = QDialog(self.window)
+            login_dialog.setWindowTitle("Авторизация")
+            layout = QVBoxLayout()
+
+            # Email
+            email_label = QLabel("Email:")
+            email_edit = QLineEdit()
+            layout.addWidget(email_label)
+            layout.addWidget(email_edit)
+
+            # Пароль
+            password_label = QLabel("Пароль:")
+            password_edit = QLineEdit()
+            password_edit.setEchoMode(QLineEdit.Password)
+            layout.addWidget(password_label)
+            layout.addWidget(password_edit)
+
+            # Кнопки
+            buttons_layout = QHBoxLayout()
+            
+            # Кнопка входа
+            login_button = QPushButton("Войти")
+            login_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
+            """)
+            
+            # Кнопка регистрации
+            register_button = QPushButton("Регистрация")
+            register_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #2196F3;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: #1976D2;
+                }
+            """)
+
+            def try_login():
+                email = email_edit.text()
+                password = password_edit.text()
+                
+                if not email or not password:
+                    QMessageBox.warning(login_dialog, "Ошибка", "Заполните все поля")
+                    return
+                    
+                try:
+                    user_data = self.db.login_user(email, password)
+                    if user_data:
+                        self.current_user = {
+                            'user_id': user_data[0],
+                            'username': user_data[1],
+                            'email': user_data[2]
+                        }
+                        self.window.update_user_panel()
+                        QMessageBox.information(login_dialog, "Успех", "Вход выполнен успешно")
+                        login_dialog.accept()
+                        # После успешного входа показываем окно команд
+                        self.click_teams_button()
+                    else:
+                        QMessageBox.warning(login_dialog, "Ошибка", "Неверный email или пароль")
+                except Exception as e:
+                    QMessageBox.critical(login_dialog, "Ошибка", f"Ошибка при входе: {str(e)}")
+
+            login_button.clicked.connect(try_login)
+            register_button.clicked.connect(self.show_register_dialog)
+
+            buttons_layout.addWidget(login_button)
+            buttons_layout.addWidget(register_button)
+            layout.addLayout(buttons_layout)
+
+            login_dialog.setLayout(layout)
+            login_dialog.exec_()
+            
+        except Exception as e:
+            print(f"Ошибка при создании окна авторизации: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def show_task_history(self, task_id: int):
+        """Показать историю изменений задачи"""
+        try:
+            dialog = QDialog(self.window)
+            dialog.setWindowTitle("История изменений")
+            dialog.resize(600, 400)
+            layout = QVBoxLayout()
+
+            # Создаем виджет для отображения истории
+            history_widget = QTextEdit()
+            history_widget.setReadOnly(True)
+            history_widget.setStyleSheet("""
+                QTextEdit {
+                    background-color: #f5f5f5;
+                    border: 1px solid #ddd;
+                    padding: 10px;
+                }
+            """)
+
+            # Получаем историю
+            history = self.db.get_task_history(task_id)
+            
+            if not history:
+                history_widget.setText("История изменений пуста")
+            else:
+                html_content = "<style>"
+                html_content += "p { margin: 5px 0; }"
+                html_content += ".timestamp { color: #666; font-size: 0.9em; }"
+                html_content += ".username { color: #2196F3; font-weight: bold; }"
+                html_content += ".change { margin-left: 20px; }"
+                html_content += "</style>"
+
+                for record in history:
+                    (history_id, changed_at, username, old_status, new_status,
+                     old_priority, new_priority, old_deadline, new_deadline,
+                     old_description, new_description, comment_text) = record
+
+                    html_content += f"<p><span class='timestamp'>{changed_at.strftime('%d.%m.%Y %H:%M')}</span> - "
+                    html_content += f"<span class='username'>{username}</span></p>"
+
+                    # Статус
+                    if old_status != new_status:
+                        old_status_text = "Выполнено" if old_status else "Не выполнено"
+                        new_status_text = "Выполнено" if new_status else "Не выполнено"
+                        html_content += f"<p class='change'>Статус: {old_status_text} → {new_status_text}</p>"
+
+                    # Приоритет
+                    if old_priority != new_priority:
+                        priority_names = {1: "Низкий", 2: "Средний", 3: "Высокий"}
+                        old_priority_text = priority_names.get(old_priority, "Не указан")
+                        new_priority_text = priority_names.get(new_priority, "Не указан")
+                        html_content += f"<p class='change'>Приоритет: {old_priority_text} → {new_priority_text}</p>"
+
+                    # Дедлайн
+                    if old_deadline != new_deadline:
+                        old_deadline_text = old_deadline.strftime('%d.%m.%Y') if old_deadline else "Не указан"
+                        new_deadline_text = new_deadline.strftime('%d.%m.%Y') if new_deadline else "Не указан"
+                        html_content += f"<p class='change'>Дедлайн: {old_deadline_text} → {new_deadline_text}</p>"
+
+                    # Описание
+                    if old_description != new_description:
+                        html_content += f"<p class='change'>Описание было изменено</p>"
+
+                    # Комментарий
+                    if comment_text:
+                        html_content += f"<p class='change'>Комментарий: {comment_text}</p>"
+
+                    html_content += "<hr>"
+
+                history_widget.setHtml(html_content)
+
+            layout.addWidget(history_widget)
+
+            # Кнопка закрытия
+            close_btn = QPushButton("Закрыть")
+            close_btn.clicked.connect(dialog.accept)
+            layout.addWidget(close_btn)
+
+            dialog.setLayout(layout)
+            dialog.exec_()
+
+        except Exception as e:
+            QMessageBox.critical(self.window, "Ошибка", f"Ошибка при отображении истории: {str(e)}")
+
+    def update_task_status(self, task_id: int, new_status: bool):
+        """Обновление статуса задачи"""
+        try:
+            # Получаем текущий статус
+            old_status = self.db.get_task_status(task_id)
+            
+            # Если статус изменился
+            if old_status != new_status:
+                # Обновляем статус
+                if self.db.update_task_status(task_id, new_status):
+                    # Добавляем запись в историю
+                    self.db.add_task_history(
+                        task_id=task_id,
+                        user_id=self.current_user['user_id'],
+                        team_id=self.current_team['id'] if self.current_team else None,
+                        old_status=old_status,
+                        new_status=new_status
+                    )
+                    return True
+            return False
+        except Exception as e:
+            print(f"Ошибка при обновлении статуса задачи: {e}")
+            return False
 
 
-#TODO: 1. Сделать атворизацию пользователя и чтобы совершать действия от его лица (комментарии, созбании проетков, создание задач)        
-#TODO  2. Сделать создание задач (использование иконок, для записи в календарь, запись приоритета с помощью SelectBox, Дата дедлайна, напомининие поставить по дефолту как задача сейчас по времени в тот момент и уведомлять)
-#TODO  3. сделать вывод проектов и возомжно по ним нажимать и редактировать как в было в прошлой итерации
-#TODO  4. Сделать историю где будет написаны изменения и написано кто внес изменения.
-
-#На данный момент реализована регистрация с записью в бд SadSmile
