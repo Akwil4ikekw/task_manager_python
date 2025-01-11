@@ -1,14 +1,17 @@
 import os
 from PyQt5.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QDialog, 
-                            QLabel, QFrame, QApplication, QScrollArea, QWidget, QMessageBox, QHBoxLayout, QLineEdit, QTextEdit, QListWidget)
-from PyQt5.QtCore import Qt
+                            QLabel, QFrame, QApplication, QScrollArea, QWidget, QMessageBox, QHBoxLayout, QLineEdit, QTextEdit, QListWidget, QSizePolicy, QDateTimeEdit, QSpinBox)
+from PyQt5.QtCore import Qt, QDateTime
 from PyQt5.QtGui import QIcon, QPixmap
 from functionality import Functionality
 from Task import Task
 from PIL import Image
 from Team import Team
 from datetime import datetime
-
+from datetime import datetime, timedelta
+from kanban_board import KanbanBoard
+from functionality import Functionality
+from Task import Task
 
 
 class Window(QMainWindow):
@@ -16,97 +19,132 @@ class Window(QMainWindow):
         super().__init__()
         self.setWindowTitle("Система управления задачами")
         
-        # 1. Сначала инициализируем Functionality
-        from functionality import Functionality
+        # Инициализируем Functionality
+        
         self.func = Functionality(self)
         
-        # 2. Создаем центральный виджет и главный layout
+        # Создаем центральный виджет и главный layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
         
-        # 3. Создаем левую панель
+        # Создаем левую панель
         left_panel = QVBoxLayout()
         
-        # 4. Сначала добавляем панель пользователя
+        # Добавляем панель пользователя
         self.create_user_panel()
         left_panel.addWidget(self.user_panel)
         
-        # 5. Затем добавляем кнопки навигации
+        # Добавляем кнопку выбора команды
+        self.select_team_button = QPushButton("Выбрать команду")
+        self.select_team_button.setStyleSheet("""
+            QPushButton {
+                background-color: #f0f0f0;
+                border: none;
+                padding: 8px;
+                border-radius: 4px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+        """)
+        self.select_team_button.clicked.connect(self.func.click_teams_button)
+        left_panel.addWidget(self.select_team_button)
+        
+        # Добавляем кнопки навигации
         nav_buttons = QVBoxLayout()
         self.create_nav_buttons(nav_buttons)
         left_panel.addLayout(nav_buttons)
         
+        # Создаем кнопку задач для нижней панели
+        self.task_button = QPushButton("Задачи")
+        self.task_button.setStyleSheet("""
+            QPushButton {
+                background-color: #f0f0f0;
+                border: none;
+                padding: 8px;
+                border-radius: 4px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+        """)
+        self.task_button.clicked.connect(self.click_input_button)
+        
         # Добавляем растягивающийся элемент
         left_panel.addStretch()
+        
+        # Создаем нижнюю панель
+        bottom_panel = QHBoxLayout()
+        bottom_panel.addWidget(self.task_button)
+        left_panel.addLayout(bottom_panel)
+        
+        # Добавляем левую панель в главный layout
+        main_layout.addLayout(left_panel)
         
         # Создаем правую панель
         right_panel = QVBoxLayout()
         
         # Добавляем заголовок
-        self.title_label = QLabel("Мои задачи")
+        self.title_label = QLabel("Добро пожаловать!")
         self.title_label.setStyleSheet("""
             QLabel {
-                font-size: 18px;
-                font-weight: bold;
-                padding: 10px;
+                font-size: 24px;
+                margin: 20px 0;
             }
         """)
         right_panel.addWidget(self.title_label)
         
-        # Создаем область для задач с прокруткой
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: white;
-            }
-        """)
+        # Добавляем layout для задач
+        self.tasks_layout = QVBoxLayout()
+        right_panel.addLayout(self.tasks_layout)
         
-        self.tasks_widget = QWidget()
-        self.tasks_layout = QVBoxLayout(self.tasks_widget)
-        self.tasks_layout.addStretch()
-        scroll_area.setWidget(self.tasks_widget)
+        # Добавляем правую панель в главный layout
+        main_layout.addLayout(right_panel, stretch=1)
         
-        right_panel.addWidget(scroll_area)
-        
-        # Создаем нижнюю панель для кнопки
-        bottom_panel = QHBoxLayout()
-        bottom_panel.addStretch()  # Добавляем растягивающийся элемент слева
-        
-        # 5. Создаем маленькую кнопку задачи
+        # Создаем кнопку добавления задачи
         self.create_task_button()
-        bottom_panel.addWidget(self.task_button)
         
-        right_panel.addLayout(bottom_panel)
-
-        
-        # Добавляем панели в главный layout
-        main_layout.addLayout(left_panel, 1)
-        main_layout.addLayout(right_panel, 4)
-        
-        self.showMaximized()
+        # Устанавливаем размер окна
+        self.resize(1200, 800)
 
     def create_nav_buttons(self, layout):
         """Создание кнопок навигации"""
-
-        spacer = QWidget()
-        spacer.setFixedHeight(200)  # Устанавливаем фиксированную высоту 150 пунктов
-    
-        layout.addWidget(spacer)
-        buttons = [
-            ("Входящие", self.func.click_input_button),
-            ("Календарь", self.func.click_calendar_button),
-            ("Бэклог", self.func.click_backlog_button),
-            ("Команды", self.func.click_teams_button)
-        ]
+        # Кнопка "Входящие"
+        self.input_button = QPushButton("Входящие")
+        self.input_button.setStyleSheet("""
+            QPushButton {
+                background-color: #f0f0f0;
+                border: none;
+                padding: 8px;
+                border-radius: 4px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+        """)
+        self.input_button.clicked.connect(self.click_input_button)
+        layout.addWidget(self.input_button)
         
-        for text, handler in buttons:
-            btn = QPushButton(text)
-            btn.setStyleSheet(self.style_button())
-            btn.clicked.connect(handler)
-            layout.addWidget(btn)
+        # Кнопка "Проекты"
+        self.projects_button = QPushButton("Проекты")
+        self.projects_button.setStyleSheet("""
+            QPushButton {
+                background-color: #f0f0f0;
+                border: none;
+                padding: 8px;
+                border-radius: 4px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+        """)
+        self.projects_button.clicked.connect(self.click_projects_button)
+        layout.addWidget(self.projects_button)
 
     def create_filters(self, layout):
         """Создание фильтров для задач"""
@@ -186,24 +224,108 @@ class Window(QMainWindow):
 
 
     def create_task_button(self):
-        """Создание кнопки для новой задачи"""
-        self.task_button = QPushButton("Новая задача", self)
-        self.task_button.setFixedSize(120, 30)  # Фиксированный размер кнопки
-        self.task_button.clicked.connect(self.func.clicked_create_task)
-        self.task_button.setStyleSheet("""
+        """Создание кнопки добавления задачи"""
+        self.add_task_button = QPushButton("+", self)
+        self.add_task_button.setFixedSize(50, 50)
+        self.add_task_button.setStyleSheet("""
             QPushButton {
-                background-color: #4CAF50;
+                background-color: #28a745;
                 color: white;
+                border-radius: 25px;
+                font-size: 24px;
+                font-weight: bold;
                 border: none;
-                border-radius: 5px;
-                padding: 5px 10px;
             }
             QPushButton:hover {
-                background-color: #45a049;
+                background-color: #218838;
             }
         """)
         
+        # Позиционируем кнопку в правом нижнем углу
+        self.add_task_button.move(
+            self.width() - self.add_task_button.width() - 20,
+            self.height() - self.add_task_button.height() - 20
+        )
+        
+        self.add_task_button.clicked.connect(self.show_create_task_dialog)
 
+    def show_create_task_dialog(self):
+        """Показать диалог создания задачи"""
+        if not self.func.is_authenticated():
+            QMessageBox.warning(self, "Ошибка", "Необходимо войти в систему")
+            return
+        
+        try:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Создание новой задачи")
+            layout = QVBoxLayout(dialog)
+            
+            # Название
+            title_edit = QLineEdit()
+            layout.addWidget(QLabel("Название:"))
+            layout.addWidget(title_edit)
+            
+            # Описание
+            desc_edit = QTextEdit()
+            layout.addWidget(QLabel("Описание:"))
+            layout.addWidget(desc_edit)
+            
+            # Дедлайн
+            deadline_edit = QDateTimeEdit(QDateTime.currentDateTime())
+            deadline_edit.setCalendarPopup(True)
+            layout.addWidget(QLabel("Дедлайн:"))
+            layout.addWidget(deadline_edit)
+            
+            # Приоритет
+            priority_edit = QSpinBox()
+            priority_edit.setRange(1, 5)
+            priority_edit.setValue(3)
+            layout.addWidget(QLabel("Приоритет (1-5):"))
+            layout.addWidget(priority_edit)
+            
+            # Кнопки
+            buttons = QHBoxLayout()
+            save_btn = QPushButton("Создать")
+            cancel_btn = QPushButton("Отмена")
+            
+            save_btn.clicked.connect(dialog.accept)
+            cancel_btn.clicked.connect(dialog.reject)
+            
+            buttons.addWidget(save_btn)
+            buttons.addWidget(cancel_btn)
+            layout.addLayout(buttons)
+            
+            if dialog.exec_() == QDialog.Accepted:
+                # Создаем новую задачу
+                
+                new_task = Task(
+                    title=title_edit.text(),
+                    description=desc_edit.toPlainText(),
+                    deadline=deadline_edit.dateTime().toPyDateTime(),
+                    priority=priority_edit.value(),
+                    user_id=self.func.current_user['user_id'],
+                    status=False
+                )
+                
+                # Сохраняем в базе данных
+                if self.func.db.create_task(new_task):
+                    # Обновляем отображение канбан доски
+                    self.click_input_button()
+                else:
+                    QMessageBox.critical(self, "Ошибка", "Не удалось создать задачу")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось создать задачу: {str(e)}")
+
+    def resizeEvent(self, event):
+        """Обработчик изменения размера окна"""
+        super().resizeEvent(event)
+        if hasattr(self, 'add_task_button'):
+            # Обновляем позицию кнопки при изменении размера окна
+            self.add_task_button.move(
+                self.width() - self.add_task_button.width() - 20,
+                self.height() - self.add_task_button.height() - 20
+            )
 
     # Стиль кнопки
     def style_button(self):
@@ -329,8 +451,19 @@ class Window(QMainWindow):
             self.login_button.clicked.connect(self.handle_auth)
 
     def handle_auth(self):
-        """Обработка входа в систему"""
-        self.func.show_login_window()
+        """Обработчик нажатия кнопки авторизации"""
+        try:
+            if self.func.is_authenticated():
+                # Если пользователь уже авторизован - выходим
+                self.func.logout()
+                self.update_user_panel()
+            else:
+                # Если не авторизован - показываем окно входа
+                self.func.show_login_dialog()  # Исправлено с show_login_window на show_login_dialog
+        except Exception as e:
+            print(f"Ошибка при обработке авторизации: {e}")
+            import traceback
+            traceback.print_exc()
 
     def handle_logout(self):
         """Обработка выхода из системы"""
@@ -541,11 +674,12 @@ class Window(QMainWindow):
 
     def update_select_team_button(self):
         """Обновление кнопки выбора команды"""
-        if self.func.is_authenticated() and self.func.get_current_team():
-            team = self.func.get_current_team()
-            self.select_team_button.setText(f"Команда: {team['name']}")
-        else:
-            self.select_team_button.setText("Выбрать команду")
+        if hasattr(self, 'select_team_button'):
+            if self.func.is_authenticated() and self.func.get_current_team():
+                team = self.func.get_current_team()
+                self.select_team_button.setText(f"Команда: {team['name']}")
+            else:
+                self.select_team_button.setText("Выбрать команду")
 
     def clear_team_photo(self):
         # Очищаем путь к фото
@@ -554,6 +688,86 @@ class Window(QMainWindow):
         self.photo_preview_label.clear()
         # Можно установить текст по умолчанию или иконку
         self.photo_preview_label.setText("Фото не выбрано")
+
+    def click_input_button(self):
+        """Показать канбан доску со всеми задачами"""
+        print("\n=== Отображение канбан доски ===")
+        
+        if not self.func.is_authenticated():
+            print("Пользователь не авторизован")
+            QMessageBox.warning(self, "Ошибка", "Необходимо войти в систему")
+            return
+        
+        print(f"Текущий пользователь: {self.func.current_user}")
+        
+        try:
+            # Очищаем текущий layout задач
+            for i in reversed(range(self.tasks_layout.count())): 
+                widget = self.tasks_layout.itemAt(i).widget()
+                if widget is not None:
+                    widget.deleteLater()
+            
+            # Обновляем заголовок
+            self.title_label.setText("Мои задачи")
+            
+            # Создаем канбан доску
+            print("Создание канбан доски")
+            kanban = KanbanBoard()
+            kanban.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            
+            # Получаем задачи пользователя из базы данных
+            tasks = self.func.db.get_user_tasks(self.func.current_user['user_id'])
+            print(f"Получено задач: {len(tasks)}")
+            
+            # Распределяем задачи по колонкам
+            for task in tasks:
+                print(f"Добавление задачи: {task.title} (Статус: {task.status}, Приоритет: {task.priority})")
+                if task.status == True:
+                    kanban.add_task(task, "completed")
+                else:
+                    if task.priority <= 2:
+                        kanban.add_task(task, "backlog")
+                    else:
+                        kanban.add_task(task, "new")
+            
+            # Добавляем канбан доску в layout
+            print("Добавление канбан доски в layout")
+            self.tasks_layout.addWidget(kanban)
+            
+            print("=== Завершено отображение канбан доски ===\n")
+            
+        except Exception as e:
+            print(f"Ошибка при отображении канбан доски: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def click_projects_button(self):
+        """Обработчик нажатия кнопки Проекты"""
+        if not self.func.is_authenticated():
+            QMessageBox.warning(self, "Ошибка", "Необходимо войти в систему")
+            return
+        
+        # Очищаем текущий layout задач
+        for i in reversed(range(self.tasks_layout.count())): 
+            widget = self.tasks_layout.itemAt(i).widget()
+            if widget is not None:
+                widget.deleteLater()
+        
+        # Обновляем заголовок
+        self.title_label.setText("Проекты")
+        
+        # Здесь будет код для отображения проектов
+        # Пока оставим заглушку
+        placeholder = QLabel("Здесь будет список проектов")
+        placeholder.setStyleSheet("""
+            QLabel {
+                color: #666;
+                font-size: 14px;
+                padding: 20px;
+            }
+        """)
+        self.tasks_layout.addWidget(placeholder)
+        self.tasks_layout.addStretch()
 
 class CreateTeamDialog(QDialog):
     def __init__(self, parent=None):

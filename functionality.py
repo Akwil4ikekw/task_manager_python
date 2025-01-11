@@ -5,12 +5,14 @@ from PyQt5.QtGui import QIcon, QPixmap
 import os
 from database import Database
 from Task import Task
+from PyQt5.QtCore import QTimer
 # from Project import Project
 # from task_history import TaskHistory
 # from Team import Team
 from datetime import datetime, timedelta
 import re  # Добавьте в начало файла
 from Team import Team
+from kanban_board import KanbanBoard
 import shutil
 from PIL import Image  # Для проверки изображений
 
@@ -59,13 +61,37 @@ class Functionality:
             traceback.print_exc()
         
     def click_input_button(self):
-        dlg = QDialog(self.window)
-        dlg.setWindowTitle("Сообщение")
+        """Показать канбан доску со всеми задачами"""
+        if not self.is_authenticated():
+            QMessageBox.warning(self.window, "Ошибка", "Необходимо войти в систему")
+            return
+        
+        # Создаем диалог с канбан доской
+        dialog = QDialog(self.window)
+        dialog.setWindowTitle("Мои задачи")
+        dialog.resize(1200, 800)
+        
         layout = QVBoxLayout()
-        label = QLabel("Кнопка Входящие была нажата.")
-        layout.addWidget(label)
-        dlg.setLayout(layout)
-        dlg.exec()
+        
+        # Создаем канбан доску
+        kanban = KanbanBoard()
+        
+        # Получаем все задачи пользователя
+        try:
+            tasks = self.db.get_user_tasks(self.current_user['user_id'])
+            
+            # Распределяем задачи по колонкам
+            for task in tasks:
+                if task.status == False:
+                    kanban.add_task(task, "todo")
+                elif task.status == True:
+                    kanban.add_task(task, "done")
+        except Exception as e:
+            print(f"Ошибка при загрузке задач: {e}")
+        
+        layout.addWidget(kanban)
+        dialog.setLayout(layout)
+        dialog.exec_()
         
     def click_teams_button(self):
         if not self.is_authenticated():
@@ -415,64 +441,66 @@ class Functionality:
         pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         return bool(re.match(pattern, email))
         
-    def show_login_window(self):
-        """Показать окно входа"""
-        dlg = QDialog(self.window)
-        dlg.setWindowTitle("Вход в систему")
-        layout = QVBoxLayout()
-        
-        # Email
-        email_edit = QLineEdit()
-        email_edit.setPlaceholderText("Email")
-        layout.addWidget(email_edit)
-        
-        # Пароль
-        password_edit = QLineEdit()
-        password_edit.setPlaceholderText("Пароль")
-        password_edit.setEchoMode(QLineEdit.Password)
-        layout.addWidget(password_edit)
-        
-        # Кнопки
-        button_layout = QHBoxLayout()
-        
-        # Кнопка входа
-        login_btn = QPushButton("Войти")
-        login_btn.setStyleSheet(self.window.style_button())
-        
-        def try_login():
-            if not email_edit.text() or not password_edit.text():
-                QMessageBox.warning(dlg, "Ошибка", "Заполните все поля")
-                return
+    def show_login_dialog(self):
+        """Показать диалог входа"""
+        try:
+            self.login_dialog = QDialog(self.window)
+            self.login_dialog.setWindowTitle("Вход")
+            layout = QVBoxLayout()
+
+            # Email
+            email_label = QLabel("Email:")
+            self.email_edit = QLineEdit()
+            layout.addWidget(email_label)
+            layout.addWidget(self.email_edit)
+
+            # Пароль
+            password_label = QLabel("Пароль:")
+            self.password_edit = QLineEdit()
+            self.password_edit.setEchoMode(QLineEdit.Password)
+            layout.addWidget(password_label)
+            layout.addWidget(self.password_edit)
+
+            # Кнопки
+            buttons_layout = QHBoxLayout()
             
-            try:
-                user_data = self.db.login_user(email_edit.text(), password_edit.text())
-                if user_data:
-                    self.current_user = {
-                        'user_id': user_data[0],
-                        'username': user_data[1],
-                        'email': user_data[2]
-                    }
-                    QMessageBox.information(dlg, "Успех", "Вход выполнен успешно!")
-                    self.window.update_user_panel()  # Обновляем панель пользователя
-                    dlg.accept()
-                else:
-                    QMessageBox.warning(dlg, "Ошибка", "Неверный email или пароль")
-            except Exception as e:
-                QMessageBox.critical(dlg, "Ошибка", f"Ошибка при входе: {str(e)}")
-        
-        login_btn.clicked.connect(try_login)
-        button_layout.addWidget(login_btn)
-        
-        # Кнопка регистрации
-        register_btn = QPushButton("Регистрация")
-        register_btn.setStyleSheet(self.window.style_button())
-        register_btn.clicked.connect(lambda: self.show_register_window(dlg))
-        button_layout.addWidget(register_btn)
-        
-        layout.addLayout(button_layout)
-        dlg.setLayout(layout)
-        dlg.exec_()
-        
+            login_button = QPushButton("Войти")
+            login_button.clicked.connect(self.handle_login)
+            
+            register_button = QPushButton("Регистрация")
+            register_button.clicked.connect(self.show_register_dialog)
+            
+            buttons_layout.addWidget(login_button)
+            buttons_layout.addWidget(register_button)
+            layout.addLayout(buttons_layout)
+
+            self.login_dialog.setLayout(layout)
+            result = self.login_dialog.exec_()
+            
+            # Если авторизация успешна, показываем канбан доску
+            if result == QDialog.Accepted and self.is_authenticated():
+                print("Авторизация успешна, показываем канбан доску")
+                self.window.click_input_button()
+            
+        except Exception as e:
+            print(f"Ошибка при создании диалога входа: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def handle_login(self):
+        """Обработчик нажатия кнопки входа"""
+        try:
+            email = self.email_edit.text()
+            password = self.password_edit.text()
+            
+            if self.login_user(email, password):
+                self.login_dialog.accept()
+            
+        except Exception as e:
+            print(f"Ошибка при обработке входа: {e}")
+            import traceback
+            traceback.print_exc()
+
     def show_register_window(self, parent_dialog=None):
         """Показать окно регистрации"""
         dlg = QDialog(self.window)
@@ -887,6 +915,112 @@ class Functionality:
         """Обработка выбора проекта"""
         self.window.current_project_id = project_id  # Сохраняем ID текущего проекта
         self.window.display_project_tasks(project_id, project_name)
+
+    def login_user(self, email: str, password: str):
+        """Авторизация пользователя"""
+        try:
+            user_data = self.db.login_user(email, password)
+            if user_data:
+                self.current_user = {
+                    'user_id': user_data[0],
+                    'username': user_data[1],
+                    'email': user_data[2],
+                    'created_at': user_data[3]
+                }
+                self.window.update_user_panel()
+                
+                # Закрываем окно авторизации
+                if hasattr(self, 'login_dialog'):
+                    self.login_dialog.accept()
+                    
+                # После успешной авторизации показываем канбан доску
+                QTimer.singleShot(100, self.window.click_input_button)
+                
+                return True
+            else:
+                QMessageBox.warning(
+                    self.window,
+                    "Ошибка",
+                    "Неверный email или пароль"
+                )
+                return False
+        except Exception as e:
+            QMessageBox.critical(
+                self.window,
+                "Ошибка",
+                f"Ошибка при входе: {str(e)}"
+            )
+            return False
+
+    def show_register_dialog(self):
+        """Показать диалог регистрации"""
+        try:
+            register_dialog = QDialog(self.window)
+            register_dialog.setWindowTitle("Регистрация")
+            layout = QVBoxLayout()
+
+            # Имя пользователя
+            username_label = QLabel("Имя пользователя:")
+            username_edit = QLineEdit()
+            layout.addWidget(username_label)
+            layout.addWidget(username_edit)
+
+            # Email
+            email_label = QLabel("Email:")
+            email_edit = QLineEdit()
+            layout.addWidget(email_label)
+            layout.addWidget(email_edit)
+
+            # Пароль
+            password_label = QLabel("Пароль:")
+            password_edit = QLineEdit()
+            password_edit.setEchoMode(QLineEdit.Password)
+            layout.addWidget(password_label)
+            layout.addWidget(password_edit)
+
+            # Подтверждение пароля
+            confirm_password_label = QLabel("Подтвердите пароль:")
+            confirm_password_edit = QLineEdit()
+            confirm_password_edit.setEchoMode(QLineEdit.Password)
+            layout.addWidget(confirm_password_label)
+            layout.addWidget(confirm_password_edit)
+
+            # Кнопка регистрации
+            register_button = QPushButton("Зарегистрироваться")
+            
+            def handle_register():
+                username = username_edit.text()
+                email = email_edit.text()
+                password = password_edit.text()
+                confirm_password = confirm_password_edit.text()
+                
+                if not all([username, email, password, confirm_password]):
+                    QMessageBox.warning(register_dialog, "Ошибка", "Все поля должны быть заполнены")
+                    return
+                    
+                if password != confirm_password:
+                    QMessageBox.warning(register_dialog, "Ошибка", "Пароли не совпадают")
+                    return
+                    
+                try:
+                    if self.db.register_user(username, email, password):
+                        QMessageBox.information(register_dialog, "Успех", "Регистрация успешно завершена")
+                        register_dialog.accept()
+                    else:
+                        QMessageBox.warning(register_dialog, "Ошибка", "Не удалось зарегистрировать пользователя")
+                except Exception as e:
+                    QMessageBox.critical(register_dialog, "Ошибка", f"Ошибка при регистрации: {str(e)}")
+            
+            register_button.clicked.connect(handle_register)
+            layout.addWidget(register_button)
+
+            register_dialog.setLayout(layout)
+            register_dialog.exec_()
+            
+        except Exception as e:
+            print(f"Ошибка при создании диалога регистрации: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 

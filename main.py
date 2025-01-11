@@ -5,11 +5,10 @@ from design import Window
 def main():
     app = QApplication(sys.argv)
     window = Window()
-    window.show()  # Показываем основное окно
-    
+    window.show()  # Показываем основное окносду
     # Показываем окно входа
-    if not window.func.is_authenticated():
-        window.func.show_login_window()
+    # if not window.func.is_authenticated():
+    #     window.func.show_login_window()
     
     sys.exit(app.exec_())
 

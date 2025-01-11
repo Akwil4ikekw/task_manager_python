@@ -2,6 +2,7 @@ import psycopg2
 from datetime import datetime
 from Task import Task
 from Team import Team
+import hashlib
 
 class Database:
     def __init__(self):
@@ -128,23 +129,24 @@ class Database:
             return None
 
     def get_user_teams(self, user_id: int) -> list:
-        """Получает список команд, в которых состоит пользователь"""
+        """Получение списка команд пользователя"""
         try:
             cursor = self.connection.cursor()
             cursor.execute("""
-                SELECT 
-                    t.team_id, 
-                    t.name, 
-                    t.description, 
-                    tm.role, 
-                    t.icon_path,
-                    (SELECT COUNT(*) FROM team_member WHERE team_id = t.team_id) as member_count
+                SELECT t.team_id, t.name, t.description
                 FROM team t
                 JOIN team_member tm ON t.team_id = tm.team_id
                 WHERE tm.user_id = %s
-                ORDER BY t.created_at DESC
             """, (user_id,))
-            return cursor.fetchall()
+            
+            teams = []
+            for row in cursor.fetchall():
+                teams.append({
+                    'team_id': row[0],
+                    'name': row[1],
+                    'description': row[2]
+                })
+            return teams
         except Exception as e:
             print(f"Ошибка при получении списка команд: {e}")
             return []
@@ -426,7 +428,7 @@ class Database:
             print(f"Ошибка при обновлении таблицы tasks: {e}")
 
     def get_team_name(self, team_id: int) -> str:
-        """Получение имени команды по id"""
+        """Получение названия команды по ID"""
         try:
             cursor = self.connection.cursor()
             cursor.execute("""
@@ -435,9 +437,122 @@ class Database:
                 WHERE team_id = %s
             """, (team_id,))
             result = cursor.fetchone()
-            return result[0] if result else None
+            return result[0] if result else "Без команды"
         except Exception as e:
-            print(f"Ошибка при получении имени команды: {e}")
-            return None
+            print(f"Ошибка при получении названия команды: {e}")
+            return "Без команды"
+
+    def get_user_tasks(self, user_id: int) -> list:
+        """Получение всех задач пользователя"""
+        try:
+            print(f"\n=== Получение задач для пользователя {user_id} ===")
+            cursor = self.connection.cursor()
+            query = """
+                SELECT task_id, title, description, user_id, status, deadline, 
+                       priority, project_id, team_id, notification_time, 
+                       notified, created_at
+                FROM tasks 
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+            """
+            print(f"SQL Query: {query}")
+            cursor.execute(query, (user_id,))
+            
+            rows = cursor.fetchall()
+            print(f"Получено строк из БД: {len(rows)}")
+            
+            tasks = []
+            for row in rows:
+                print(f"\nОбработка строки: {row}")
+                task = Task(
+                    title=row[1],
+                    description=row[2],
+                    user_id=row[3],
+                    status=row[4],
+                    deadline=row[5],
+                    priority=row[6],
+                    project_id=row[7],
+                    team_id=row[8],
+                    notification_time=row[9],
+                    notified=row[10],
+                    created_at=row[11]
+                )
+                task.task_id = row[0]
+                tasks.append(task)
+                print(f"Создан объект Task: {task.__dict__}")
+            
+            print(f"\nВсего создано объектов Task: {len(tasks)}")
+            return tasks
+        except Exception as e:
+            print(f"\n=== Ошибка при получении задач пользователя ===")
+            print(f"Тип ошибки: {type(e).__name__}")
+            print(f"Текст ошибки: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    def update_task_status(self, task_id: int, status: bool) -> bool:
+        """Обновление статуса задачи"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                UPDATE tasks 
+                SET status = %s 
+                WHERE task_id = %s
+            """, (status, task_id))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка при обновлении статуса задачи: {e}")
+            self.connection.rollback()
+            return False
+
+    def update_task(self, task) -> bool:
+        """Обновление задачи"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                UPDATE tasks 
+                SET title = %s, description = %s, deadline = %s, 
+                    priority = %s, notification_time = %s
+                WHERE task_id = %s
+            """, (task.title, task.description, task.deadline, 
+                  task.priority, task.notification_time, task.task_id))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка при обновлении задачи: {e}")
+            self.connection.rollback()
+            return False
+
+    def delete_task(self, task_id: int) -> bool:
+        """Удаление задачи"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                DELETE FROM tasks 
+                WHERE task_id = %s
+            """, (task_id,))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка при удалении задачи: {e}")
+            self.connection.rollback()
+            return False
+
+    def get_project_name(self, project_id: int) -> str:
+        """Получение названия проекта по ID"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT name 
+                FROM project 
+                WHERE project_id = %s
+            """, (project_id,))
+            result = cursor.fetchone()
+            return result[0] if result else "Без проекта"
+        except Exception as e:
+            print(f"Ошибка при получении названия проекта: {e}")
+            return "Без проекта"
 
    
