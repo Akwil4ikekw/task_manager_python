@@ -71,8 +71,23 @@ class Window(QMainWindow):
         self.notification_btn.clicked.connect(self.show_notifications)
         self.notification_btn.move(self.width() - 50, 10)  # Позиционируем в правом верхнем углу
         
-
-
+        # Добавляем кнопку истории в правый верхний угол
+        self.history_btn = QPushButton("📋", self)
+        self.history_btn.setFixedSize(32, 32)
+        self.history_btn.setStyleSheet("""
+            QPushButton {
+                border: none;
+                border-radius: 16px;
+                background-color: transparent;
+                font-size: 18px;
+                margin: 10px;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+        """)
+        self.history_btn.clicked.connect(self.show_notifications)  # используем тот же метод для отображения истории
+        self.history_btn.move(self.width() - 50, 10)  # позиционируем в правом верхнем углу
         
         self.select_team_button.clicked.connect(self.func.click_teams_button)
         left_panel.addWidget(self.select_team_button)
@@ -142,6 +157,9 @@ class Window(QMainWindow):
         # Обновляем позицию кнопки уведомлений при изменении размера окна
         if hasattr(self, 'notification_btn'):
             self.notification_btn.move(self.width() - 50, 10)
+        # Обновляем позицию кнопки истории при изменении размера окна
+        if hasattr(self, 'history_btn'):
+            self.history_btn.move(self.width() - 50, 10)
 
 
     def create_nav_buttons(self, layout):

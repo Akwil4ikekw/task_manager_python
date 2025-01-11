@@ -562,22 +562,125 @@ class Database:
             print(f"[ERROR] Ошибка при получении статуса задачи: {e}")
             return None
 
-    def update_task(self, task: Task) -> bool:
-        """Обновление задачи в базе данных"""
+    def update_task(self, task_id: int, title=None, description=None, 
+                    deadline=None, priority=None, status=None, user_id=None, team_id=None) -> bool:
+        """Обновление задачи с логированием изменений"""
         try:
+            # Получаем текущие данные задачи
             cursor = self.connection.cursor()
             cursor.execute("""
-                UPDATE tasks
-                SET title = %s, description = %s, deadline = %s, priority = %s
+                SELECT title, description, deadline, priority, user_id, team_id, status
+                FROM tasks WHERE task_id = %s
+            """, (task_id,))
+            old_data = cursor.fetchone()
+            
+            if not old_data:
+                return False
+            
+            old_title, old_description, old_deadline, old_priority, old_user_id, old_team_id, old_status = old_data
+
+            # Формируем SQL запрос для обновления
+            update_parts = []
+            values = []
+            
+            if title is not None:
+                update_parts.append("title = %s")
+                values.append(title)
+            if description is not None:
+                update_parts.append("description = %s")
+                values.append(description)
+            if deadline is not None:
+                update_parts.append("deadline = %s")
+                values.append(deadline)
+            if priority is not None:
+                update_parts.append("priority = %s")
+                values.append(int(priority))  # Преобразуем в int
+            if status is not None:
+                update_parts.append("status = %s")
+                values.append(bool(status))  # Преобразуем в bool
+            if user_id is not None:
+                update_parts.append("user_id = %s")
+                values.append(int(user_id))
+            if team_id is not None:
+                update_parts.append("team_id = %s")
+                values.append(int(team_id))
+            
+            if not update_parts:
+                return False
+            
+            values.append(task_id)
+            
+            # Выполняем обновление
+            cursor.execute(f"""
+                UPDATE tasks 
+                SET {', '.join(update_parts)}
                 WHERE task_id = %s
-            """, (task.title, task.description, task.deadline, task.priority, task.task_id))
+                RETURNING user_id, team_id
+            """, values)
+            
+            current_ids = cursor.fetchone()
+            if current_ids:
+                current_user_id, current_team_id = current_ids
+            else:
+                current_user_id, current_team_id = old_user_id, old_team_id
+
+            # Логируем изменения
+            if title is not None and str(title) != str(old_title):
+                self.add_task_history(
+                    task_id=task_id,
+                    user_id=current_user_id,
+                    team_id=current_team_id,
+                    old_description=str(old_title),
+                    new_description=str(title),
+                    change_type='update_title'
+                )
+            
+            if description is not None and str(description) != str(old_description):
+                self.add_task_history(
+                    task_id=task_id,
+                    user_id=current_user_id,
+                    team_id=current_team_id,
+                    old_description=str(old_description),
+                    new_description=str(description),
+                    change_type='update_description'
+                )
+            
+            if deadline is not None and str(deadline) != str(old_deadline):
+                self.add_task_history(
+                    task_id=task_id,
+                    user_id=current_user_id,
+                    team_id=current_team_id,
+                    old_deadline=old_deadline,
+                    new_deadline=deadline,
+                    change_type='update_deadline'
+                )
+            
+            if priority is not None and int(priority) != old_priority:
+                self.add_task_history(
+                    task_id=task_id,
+                    user_id=current_user_id,
+                    team_id=current_team_id,
+                    old_priority=old_priority,
+                    new_priority=int(priority),
+                    change_type='update_priority'
+                )
+            
+            if status is not None and bool(status) != old_status:
+                self.add_task_history(
+                    task_id=task_id,
+                    user_id=current_user_id,
+                    team_id=current_team_id,
+                    old_status=old_status,
+                    new_status=bool(status),
+                    change_type='update_status'
+                )
+
             self.connection.commit()
             return True
         except Exception as e:
             print(f"Ошибка при обновлении задачи: {e}")
             self.connection.rollback()
             return False
-
 
     def delete_task(self, task_id: int) -> bool:
         """Удаление задачи"""
@@ -945,327 +1048,6 @@ class Database:
             print(f"Ошибка при получении истории задач: {e}")
             return []
 
-    def update_task(self, task_id: int, **kwargs) -> bool:
-        """Обновление задачи с логированием изменений"""
-        try:
-            # Получаем текущие данные задачи
-            old_task = self.get_task_by_id(task_id)
-            if not old_task:
-                return False
-
-            # Формируем SQL запрос для обновления
-            update_fields = []
-            values = []
-            for key, value in kwargs.items():
-                update_fields.append(f"{key} = %s")
-                values.append(value)
-            
-            if not update_fields:
-                return False
-            
-            values.append(task_id)
-            
-            cursor = self.connection.cursor()
-            cursor.execute(f"""
-                UPDATE tasks 
-                SET {', '.join(update_fields)}
-                WHERE task_id = %s
-            """, values)
-
-            # Логируем изменения
-            for key, new_value in kwargs.items():
-                old_value = getattr(old_task, key, None)
-                if old_value != new_value:
-                    self.add_task_history(
-                        task_id=task_id,
-                        user_id=kwargs.get('user_id', old_task.user_id),
-                        team_id=kwargs.get('team_id', old_task.team_id),
-                        old_status=old_task.status if key == 'status' else None,
-                        new_status=new_value if key == 'status' else None,
-                        old_priority=old_task.priority if key == 'priority' else None,
-                        new_priority=new_value if key == 'priority' else None,
-                        old_deadline=old_task.deadline if key == 'deadline' else None,
-                        new_deadline=new_value if key == 'deadline' else None,
-                        old_description=old_task.description if key == 'description' else None,
-                        new_description=new_value if key == 'description' else None,
-                        change_type=f"update_{key}"
-                    )
-
-            self.connection.commit()
-            return True
-        except Exception as e:
-            print(f"Ошибка при обновлении задачи: {e}")
-            self.connection.rollback()
-            return False
-
-    def delete_task(self, task_id: int, user_id: int) -> bool:
-        """Удаление задачи с логированием"""
-        try:
-            # Получаем данные задачи перед удалением
-            task = self.get_task_by_id(task_id)
-            if not task:
-                return False
-
-            cursor = self.connection.cursor()
-            
-            # Логируем удаление
-            self.add_task_history(
-                task_id=task_id,
-                user_id=user_id,
-                team_id=task.team_id,
-                change_type="delete_task"
-            )
-
-            # Удаляем задачу
-            cursor.execute("DELETE FROM tasks WHERE task_id = %s", (task_id,))
-            self.connection.commit()
-            return True
-        except Exception as e:
-            print(f"Ошибка при удалении задачи: {e}")
-            self.connection.rollback()
-            return False
-
-    def create_task(self, task) -> bool:
-        """Создание задачи с логированием"""
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                INSERT INTO tasks (title, description, deadline, priority, user_id, team_id, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                RETURNING task_id
-            """, (
-                task.title, task.description, task.deadline,
-                task.priority, task.user_id, task.team_id, task.status
-            ))
-            
-            task_id = cursor.fetchone()[0]
-            
-            # Логируем создание
-            self.add_task_history(
-                task_id=task_id,
-                user_id=task.user_id,
-                team_id=task.team_id,
-                new_status=task.status,
-                new_priority=task.priority,
-                new_deadline=task.deadline,
-                new_description=task.description,
-                change_type="create_task"
-            )
-
-            self.connection.commit()
-            return True
-        except Exception as e:
-            print(f"Ошибка при создании задачи: {e}")
-            self.connection.rollback()
-            return False
-
-    def add_history_record(self, user_id: int, action_type: str, entity_type: str, 
-                          entity_id: int, old_value=None, new_value=None, 
-                          team_id=None, project_id=None, task_id=None) -> bool:
-        """Универсальный метод для добавления записи в историю"""
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                INSERT INTO system_history (
-                    user_id, action_type, entity_type, entity_id,
-                    old_value, new_value, team_id, project_id, task_id,
-                    created_at
-                ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
-                )
-            """, (
-                user_id, action_type, entity_type, entity_id,
-                old_value, new_value, team_id, project_id, task_id
-            ))
-            self.connection.commit()
-            return True
-        except Exception as e:
-            print(f"Ошибка при добавлении записи в историю: {e}")
-            self.connection.rollback()
-            return False
-
-    def delete_team_member(self, team_id: int, user_id: int, removed_by_id: int) -> bool:
-        """Удаление участника из команды"""
-        try:
-            # Получаем информацию о пользователе перед удалением
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                SELECT username FROM personal_user WHERE user_id = %s
-            """, (user_id,))
-            user_info = cursor.fetchone()
-            
-            if user_info:
-                # Логируем удаление участника через task_history
-                self.add_task_history(
-                    task_id=0,  # специальное значение для системных действий
-                    user_id=removed_by_id,
-                    team_id=team_id,
-                    old_description=f"Удален участник: {user_info[0]}",
-                    change_type='remove_team_member'
-                )
-            
-            cursor.execute("""
-                DELETE FROM team_member 
-                WHERE team_id = %s AND user_id = %s
-            """, (team_id, user_id))
-            
-            self.connection.commit()
-            return True
-        except Exception as e:
-            print(f"Ошибка при удалении участника: {e}")
-            self.connection.rollback()
-            return False
-
-    def update_project(self, project_id: int, name: str, description: str, user_id: int) -> bool:
-        """Обновление информации о проекте"""
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                SELECT name, description, team_id FROM project 
-                WHERE project_id = %s
-            """, (project_id,))
-            old_data = cursor.fetchone()
-            
-            if old_data:
-                old_name, old_desc, team_id = old_data
-                
-                # Логируем изменения через task_history
-                if old_name != name or old_desc != description:
-                    self.add_task_history(
-                        task_id=0,  # специальное значение для системных действий
-                        user_id=user_id,
-                        team_id=team_id,
-                        old_description=f"Проект: {old_name}\nОписание: {old_desc}",
-                        new_description=f"Проект: {name}\nОписание: {description}",
-                        change_type='update_project'
-                    )
-            
-            cursor.execute("""
-                UPDATE project 
-                SET name = %s, description = %s 
-                WHERE project_id = %s
-            """, (name, description, project_id))
-            
-            self.connection.commit()
-            return True
-        except Exception as e:
-            print(f"Ошибка при обновлении проекта: {e}")
-            self.connection.rollback()
-            return False
-
-    def delete_project(self, project_id: int, user_id: int) -> bool:
-        """Удаление проекта"""
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                SELECT name, team_id FROM project WHERE project_id = %s
-            """, (project_id,))
-            project_info = cursor.fetchone()
-            
-            if project_info:
-                # Логируем удаление через task_history
-                self.add_task_history(
-                    task_id=0,  # специальное значение для системных действий
-                    user_id=user_id,
-                    team_id=project_info[1],
-                    old_description=f"Удален проект: {project_info[0]}",
-                    change_type='delete_project'
-                )
-            
-            cursor.execute("DELETE FROM project WHERE project_id = %s", (project_id,))
-            self.connection.commit()
-            return True
-        except Exception as e:
-            print(f"Ошибка при удалении проекта: {e}")
-            self.connection.rollback()
-            return False
-
-    def get_task_by_id(self, task_id: int):
-        """Получение задачи по ID"""
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                SELECT task_id, title, description, deadline, priority, 
-                       user_id, team_id, status, created_at
-                FROM tasks 
-                WHERE task_id = %s
-            """, (task_id,))
-            
-            task = cursor.fetchone()
-            if task:
-                return Task(
-                    task_id=task[0],
-                    title=task[1],
-                    description=task[2],
-                    deadline=task[3],
-                    priority=task[4],
-                    user_id=task[5],
-                    team_id=task[6],
-                    status=task[7],
-                    created_at=task[8]
-                )
-            return None
-        except Exception as e:
-            print(f"Ошибка при получении задачи: {e}")
-            return None
-
-    def get_task_history(self, task_id: int) -> list:
-        """Получение истории изменений задачи"""
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                SELECT 
-                    th.history_id,
-                    th.changed_at,
-                    pu.username,
-                    th.old_status,
-                    th.new_status,
-                    th.old_priority,
-                    th.new_priority,
-                    th.old_deadline,
-                    th.new_deadline,
-                    th.old_discription,
-                    th.new_description,
-                    th.change_type
-                FROM task_history th
-                LEFT JOIN personal_user pu ON th.user_id = pu.user_id
-                WHERE th.task_id = %s
-                ORDER BY th.changed_at DESC
-            """, (task_id,))
-            return cursor.fetchall()
-        except Exception as e:
-            print(f"Ошибка при получении истории задачи: {e}")
-            return []
-
-    def get_all_task_history(self, user_id: int) -> list:
-        """Получение истории всех задач пользователя"""
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                SELECT 
-                    t.title as task_title,
-                    th.changed_at,
-                    pu.username,
-                    th.old_status,
-                    th.new_status,
-                    th.old_priority,
-                    th.new_priority,
-                    th.old_deadline,
-                    th.new_deadline,
-                    th.old_discription,
-                    th.new_description,
-                    th.change_type
-                FROM task_history th
-                JOIN tasks t ON th.task_id = t.task_id
-                LEFT JOIN personal_user pu ON th.user_id = pu.user_id
-                WHERE t.user_id = %s OR th.task_id = 0
-                ORDER BY th.changed_at DESC
-            """, (user_id,))
-            return cursor.fetchall()
-        except Exception as e:
-            print(f"Ошибка при получении истории задач: {e}")
-            return []
-
     def add_comment(self, task_id: int, user_id: int, text: str) -> bool:
         """Добавление комментария"""
         try:
@@ -1363,6 +1145,64 @@ class Database:
                 return True
         except Exception as e:
             print(f"Ошибка при удалении комментария: {e}")
+            self.connection.rollback()
+            return False
+
+    def get_task_comments(self, task_id: int) -> list:
+        """Получение комментариев к задаче"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT 
+                    c.comment_id,
+                    c.comment_text,
+                    c.created_at,
+                    pu.username,
+                    pu.user_id
+                FROM comment c
+                JOIN personal_user pu ON c.user_id = pu.user_id
+                WHERE c.task_id = %s
+                ORDER BY c.created_at DESC
+            """, (task_id,))
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Ошибка при получении комментариев: {e}")
+            return []
+
+    def add_comment_to_task(self, task_id: int, user_id: int, comment_text: str) -> bool:
+        """Добавление комментария к задаче"""
+        try:
+            cursor = self.connection.cursor()
+            
+            # Получаем team_id задачи
+            cursor.execute("""
+                SELECT team_id FROM tasks WHERE task_id = %s
+            """, (task_id,))
+            team_id = cursor.fetchone()[0]
+            
+            # Добавляем комментарий
+            cursor.execute("""
+                INSERT INTO comment (task_id, user_id, comment_text, created_at)
+                VALUES (%s, %s, %s, NOW())
+                RETURNING comment_id
+            """, (task_id, user_id, comment_text))
+            
+            comment_id = cursor.fetchone()[0]
+            
+            # Добавляем запись в историю
+            self.add_task_history(
+                task_id=task_id,
+                user_id=user_id,
+                team_id=team_id,
+                new_description=comment_text,
+                comment_id=comment_id,
+                change_type='add_comment'
+            )
+            
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка при добавлении комментария: {e}")
             self.connection.rollback()
             return False
 
