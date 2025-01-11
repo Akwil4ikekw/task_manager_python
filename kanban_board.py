@@ -1,16 +1,18 @@
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, 
                             QScrollArea, QFrame, QPushButton, QSizePolicy, 
                             QMenu, QDialog, QLineEdit, QTextEdit, QDateTimeEdit, 
-                            QSpinBox, QMessageBox, QComboBox)
-from PyQt5.QtCore import Qt, QDateTime
+                            QSpinBox, QMessageBox, QComboBox,QMainWindow)
+from PyQt5.QtCore import Qt, QDateTime, QMimeData
 from datetime import datetime
 from Task import Task
+from PyQt5.QtGui import QDrag
 
 class KanbanCard(QFrame):
     def __init__(self, task, parent=None):
         super().__init__(parent)
         self.task = task
         self.init_ui()
+        self.setAcceptDrops(True)
         
     def init_ui(self):
         self.setStyleSheet("""
@@ -22,7 +24,8 @@ class KanbanCard(QFrame):
                 padding: 15px;
             }
             QFrame:hover {
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+                background-color: #f8f9fa;
+                border: 1px solid #ddd;
             }
             QPushButton {
                 background-color: #f8f9fa;
@@ -100,20 +103,58 @@ class KanbanCard(QFrame):
         """)
         info_layout.addWidget(priority_label)
         
+        # Добавляем информацию о команде
+        if self.task.team_id:
+            from database import Database
+            db = Database()
+            team_name = db.get_team_name(self.task.team_id)
+            team_label = QLabel(f"<strong>Команда:</strong> {team_name}")
+            team_label.setStyleSheet("color: #555; font-size: 12px; margin: 5px 0;")
+            info_layout.addWidget(team_label)
+        
         layout.addLayout(info_layout)
     
     def toggle_status(self):
         """Переключение статуса задачи"""
         try:
-            self.task.status = not self.task.status
-            # Обновляем в базе данных
+            current_status = self.task.status
+            new_status = None
+            
+            if current_status == 0:
+                new_status = 1  # Новая -> В работе
+            elif current_status == 1:
+                new_status = 2  # В работе -> Завершено
+            elif current_status == 2:
+                new_status = 0  # Завершено -> Новая
+            else:
+                new_status = 0  # Неизвестный статус -> Новая
+            
+            print(f"[DEBUG] Изменение статуса задачи {self.task.task_id}: {current_status} -> {new_status}")
+            
             from database import Database
             db = Database()
-            db.update_task_status(self.task.task_id, self.task.status)
-            # Обновляем отображение
-            self.parent().parent().parent().parent().update_board()
+            if db.update_task_status(self.task.task_id, new_status):
+                self.task.status = new_status  # Обновляем статус в объекте задачи
+                
+                # Получаем главное окно и обновляем доску
+                main_window = None
+                current = self
+                while current and not isinstance(current, QMainWindow):
+                    current = current.parent()
+                    if current and hasattr(current, 'func'):
+                        main_window = current
+                        break
+                
+                if main_window:
+                    print("[DEBUG] Найдено главное окно, обновляем доску")
+                    main_window.func.click_input_button()
+                else:
+                    print("[ERROR] Не удалось найти главное окно")
+                    
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось обновить статус: {str(e)}")
+            print(f"[ERROR] Ошибка при обновлении статуса: {e}")
+            import traceback
+            traceback.print_exc()
     
     def edit_task(self):
         """Редактирование задачи"""
@@ -158,39 +199,38 @@ class KanbanCard(QFrame):
             layout.addLayout(buttons)
             
             if dialog.exec_() == QDialog.Accepted:
-                # Обновляем данные задачи
-                self.task.title = title_edit.text()
-                self.task.description = desc_edit.toPlainText()
-                self.task.deadline = deadline_edit.dateTime().toPyDateTime()
-                self.task.priority = priority_edit.value()
-                
-                # Сохраняем в базе данных
                 from database import Database
                 db = Database()
-                db.update_task(self.task)
-                
-                # Обновляем отображение
-                self.parent().parent().parent().parent().update_board()
-                
+                if db.update_task(self.task):
+                    # Обновляем через главное окно
+                    from design import Window
+                    main_window = self.window()
+                    if isinstance(main_window, Window):
+                        main_window.click_input_button()
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось отредактировать задачу: {str(e)}")
+            print(f"Ошибка при редактировании задачи: {e}")
     
     def delete_task(self):
         """Удаление задачи"""
         try:
-            reply = QMessageBox.question(self, "Подтверждение", 
-                                       "Вы уверены, что хотите удалить эту задачу?",
-                                       QMessageBox.Yes | QMessageBox.No)
+            reply = QMessageBox.question(
+                self, 'Подтверждение',
+                'Вы уверены, что хотите удалить эту задачу?',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
             
             if reply == QMessageBox.Yes:
                 from database import Database
                 db = Database()
-                db.delete_task(self.task.task_id)
-                # Обновляем отображение
-                self.parent().parent().parent().parent().update_board()
-                
+                if db.delete_task(self.task.task_id):
+                    # Обновляем через главное окно
+                    from design import Window
+                    main_window = self.window()
+                    if isinstance(main_window, Window):
+                        main_window.click_input_button()
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось удалить задачу: {str(e)}")
+            print(f"Ошибка при удалении задачи: {e}")
     
     def get_priority_color(self):
         colors = {
@@ -201,137 +241,181 @@ class KanbanCard(QFrame):
             5: "#e74c3c"   # Красный
         }
         return colors.get(self.task.priority, "#95a5a6")
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            drag = QDrag(self)
+            mime = QMimeData()
+            mime.setText(str(self.task.task_id))
+            drag.setMimeData(mime)
+            drag.exec_(Qt.MoveAction)
 
 class KanbanColumn(QWidget):
-    def __init__(self, title, color, parent=None):
-        super().__init__(parent)
-        self.title = title
-        self.color = color
-        self.init_ui()
+    def __init__(self, title, status):
+        super().__init__()
+        self.status = status
+        self.color = {
+            "new": "light-blue",
+            "backlog": "light-yellow",
+            "completed": "light-green"
+        }.get(status, "white")
+        self.init_ui(title)
         
-    def init_ui(self):
-        self.setStyleSheet(f"""
-            QWidget {{
-                background: {self.get_background_color()};
-                border-radius: 8px;
-                border-top: 5px solid {self.color};
-                padding: 15px;
-                max-width: 300px;
-            }}
-        """)
-        
-        layout = QVBoxLayout(self)
+    def init_ui(self, title):
+        layout = QVBoxLayout()
         
         # Заголовок колонки
-        title = QLabel(self.title)
-        title.setStyleSheet("""
-            font-size: 16px;
-            font-weight: bold;
-            color: #333;
-            padding-bottom: 5px;
-            border-bottom: 2px solid #e9ecef;
-            margin-bottom: 15px;
+        title_label = QLabel(title)
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet(f"""
+            QLabel {{
+                background: {self.get_background_color()};
+                padding: 10px;
+                border-radius: 5px;
+                font-weight: bold;
+            }}
         """)
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        layout.addWidget(title_label)
         
         # Контейнер для карточек
-        self.cards_widget = QWidget()
-        self.cards_layout = QVBoxLayout(self.cards_widget)
-        self.cards_layout.setSpacing(10)
-        self.cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.cards_layout = QVBoxLayout()
+        self.cards_layout.setAlignment(Qt.AlignTop)
         
-        # Область прокрутки
+        # Создаем виджет для прокрутки
         scroll = QScrollArea()
-        scroll.setWidget(self.cards_widget)
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background: transparent;
-            }
-        """)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        
+        # Создаем контейнер для карточек
+        cards_container = QWidget()
+        cards_container.setLayout(self.cards_layout)
+        scroll.setWidget(cards_container)
         
         layout.addWidget(scroll)
-        layout.addStretch()
+        self.setLayout(layout)
+        
+        # Настраиваем прием перетаскивания
+        self.setAcceptDrops(True)
         
     def get_background_color(self):
         colors = {
-            "#ff6b6b": "#ffecec",  # Для бэклога
-            "#ffa500": "#fff3e6",  # Для новых
-            "#2ecc71": "#eaffea"   # Для завершенных
+            "light-blue": "#e3f2fd",
+            "light-yellow": "#fff3e0",
+            "light-green": "#e8f5e9",
+            "white": "#ffffff"
         }
         return colors.get(self.color, "#ffffff")
     
     def add_card(self, task):
-        card = KanbanCard(task)
-        self.cards_layout.insertWidget(0, card)
+        """Добавление карточки в колонку"""
+        card = KanbanCard(task, self)
+        self.cards_layout.addWidget(card)
+        print(f"[DEBUG] Добавлена карточка задачи {task.task_id} со статусом {task.status} в колонку {self.status}")
+    
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText():
+            event.accept()
+        else:
+            event.ignore()
+            
+    def dropEvent(self, event):
+        """Обработка события перетаскивания карточки"""
+        try:
+            data = event.mimeData().text()
+            task_id = int(data)
+            
+            from database import Database
+            db = Database()
+            
+            # Жестко заданные статусы
+            new_status = {
+                "new": 0,      # Новые задачи (статус 0)
+                "backlog": 1,  # В работе (статус 1)
+                "completed": 2 # Завершенные (статус 2)
+            }[self.status]
+            
+            # Обновляем статус задачи в базе данных
+            if db.update_task_status(task_id, new_status):
+                # Получаем все задачи и обновляем доску
+                tasks = db.get_all_tasks()
+                self.parent().update_tasks(tasks)
+                event.accept()
+            else:
+                event.ignore()
+                
+        except Exception as e:
+            print(f"[ERROR] Ошибка при перетаскивании: {e}")
+            import traceback
+            traceback.print_exc()
+            event.ignore()
 
 class KanbanBoard(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, project_id=None):
+        super().__init__()
+        self.project_id = project_id
         self.init_ui()
-        self.setAcceptDrops(True)
         
     def init_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(20)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        layout = QHBoxLayout()
         
-        # Создаем колонки в новом порядке
-        columns_layout = QHBoxLayout()
-        columns_layout.setSpacing(20)
+        # Создаем колонки
+        self.new = KanbanColumn("Новые", "new")
+        self.backlog = KanbanColumn("В работе", "backlog")
+        self.completed = KanbanColumn("Завершенные", "completed")
         
-        # Новые
-        self.new = KanbanColumn("Новые", "#ffa500")
-        self.new.setStyleSheet("""
-            QWidget {
-                background: #fff3e6;
-                border-top: 5px solid #ffa500;
-                border-radius: 8px;
-                padding: 15px;
-                max-width: 350px;
-            }
-        """)
+        layout.addWidget(self.new)
+        layout.addWidget(self.backlog)
+        layout.addWidget(self.completed)
         
-        # Беклог
-        self.backlog = KanbanColumn("Беклог", "#ff6b6b")
-        self.backlog.setStyleSheet("""
-            QWidget {
-                background: #ffecec;
-                border-top: 5px solid #ff6b6b;
-                border-radius: 8px;
-                padding: 15px;
-                max-width: 350px;
-            }
-        """)
+        self.setLayout(layout)
         
-        # Завершенные
-        self.completed = KanbanColumn("Завершенные", "#2ecc71")
-        self.completed.setStyleSheet("""
-            QWidget {
-                background: #eaffea;
-                border-top: 5px solid #2ecc71;
-                border-radius: 8px;
-                padding: 15px;
-                max-width: 350px;
-            }
-        """)
+    def update_tasks(self, tasks):
+        """Обновление задач на доске"""
+        print("[DEBUG] Начало обновления задач на доске")
         
-        # Добавляем колонки в новом порядке
-        columns_layout.addWidget(self.new)
-        columns_layout.addWidget(self.backlog)
-        columns_layout.addWidget(self.completed)
-        
-        main_layout.addLayout(columns_layout)
+        try:
+            # Очищаем все колонки
+            for column in [self.new, self.backlog, self.completed]:
+                while column.cards_layout.count():
+                    item = column.cards_layout.takeAt(0)
+                    widget = item.widget()
+                    if widget:
+                        widget.deleteLater()
+            
+            # Распределяем задачи по колонкам
+            for task in tasks:
+                status = task.status  # Получаем текущий статус из БД
+                print(f"[DEBUG] Распределение задачи {task.task_id}, статус: {status}")
+                
+                if status == 0:
+                    print(f"[DEBUG] Задача {task.task_id} -> Новые")
+                    self.new.add_card(task)
+                elif status == 1:
+                    print(f"[DEBUG] Задача {task.task_id} -> В работе")
+                    self.backlog.add_card(task)
+                elif status == 2:
+                    print(f"[DEBUG] Задача {task.task_id} -> Завершенные")
+                    self.completed.add_card(task)
+                else:
+                    print(f"[WARNING] Неизвестный статус {status}, задача {task.task_id} -> Новые")
+                    self.new.add_card(task)
+                    
+        except Exception as e:
+            print(f"[ERROR] Ошибка при обновлении доски: {e}")
+            import traceback
+            traceback.print_exc()
 
     def add_task(self, task, status="new"):
+        """Добавление задачи в определенную колонку"""
         if status == "backlog":
+            task.current_column = 'backlog'
             self.backlog.add_card(task)
-        elif status == "new":
-            self.new.add_card(task)
         elif status == "completed":
+            task.current_column = 'completed'
             self.completed.add_card(task)
+        else:
+            task.current_column = 'new'
+            self.new.add_card(task)
 
     def show_create_task_dialog(self):
         """Показать диалог создания задачи"""
@@ -388,7 +472,6 @@ class KanbanBoard(QWidget):
             layout.addLayout(buttons)
             
             if dialog.exec_() == QDialog.Accepted:
-                
                 new_task = Task(
                     title=title_edit.text(),
                     description=desc_edit.toPlainText(),
@@ -396,11 +479,14 @@ class KanbanBoard(QWidget):
                     priority=priority_edit.value(),
                     user_id=self.parent().func.current_user['user_id'],
                     team_id=team_combo.currentData(),
-                    status=False
+                    status=False,  # Новая задача всегда не выполнена
+                    notification_time=deadline_edit.dateTime().toPyDateTime(),
+                    notified=False,
+                    created_at=datetime.now()
                 )
                 
                 if self.parent().func.db.create_task(new_task):
-                    self.parent().click_input_button()
+                    self.update_board()  # Обновляем доску сразу после создания
                 else:
                     QMessageBox.critical(self, "Ошибка", "Не удалось создать задачу")
                     

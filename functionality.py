@@ -1,19 +1,21 @@
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QLabel, QInputDialog, QPushButton, QWidget, QCheckBox, QLineEdit, QHBoxLayout, QMessageBox, QCalendarWidget, QListWidget, QFileDialog, QListWidgetItem, QTabWidget, 
-                             QTextEdit, QComboBox, QTimeEdit)
-from PyQt5.QtCore import QDate, Qt, QTime, QSize, QTimer
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QLabel, QInputDialog, QPushButton, 
+                            QWidget, QCheckBox, QLineEdit, QHBoxLayout, QMessageBox, 
+                            QCalendarWidget, QListWidget, QFileDialog, QListWidgetItem, 
+                            QTabWidget, QTextEdit, QComboBox, QTimeEdit, QSizePolicy, 
+                            QDateTimeEdit, QGroupBox)
+from PyQt5.QtCore import QDate, Qt, QTime, QSize, QTimer, QDateTime
 from PyQt5.QtGui import QIcon, QPixmap
-import os
 from database import Database
 from Task import Task
-from PyQt5.QtCore import QTimer
-# from Project import Project
-# from task_history import TaskHistory
-# from Team import Team
-from datetime import datetime, timedelta
-import re  # Добавьте в начало файла
 from Team import Team
 from kanban_board import KanbanBoard
+from datetime import datetime, timedelta
+import re
+import os
+from datetime import datetime, timedelta
+from kanban_board import KanbanBoard
 import shutil
+from dialogs import CreateTaskDialog
 from PIL import Image  # Для проверки изображений
 
 # from UserTeam import UserTeam
@@ -28,11 +30,17 @@ class Functionality:
         self.current_team = None  # Добавляем атрибут для хранения текущей команды
         self.window.current_project_id = None  # Добавляем инициализацию
         
-    def set_current_team(self, team_id: int, team_name: str):
-        """Установить текущую команду"""
-        self.current_team = {'id': team_id, 'name': team_name}
-        # Обновляем состояние кнопки
-        self.window.update_select_team_button()
+    def set_current_team(self, team_id, team_name):
+        """Установка текущей команды"""
+        try:
+            self.current_team = {
+                'id': team_id,
+                'name': team_name
+            }
+            self.window.update_select_team_button()
+            self.teams_dialog.close()
+        except Exception as e:
+            print(f"Ошибка при установке текущей команды: {e}")
 
     def get_current_team(self):
         """Получить текущую команду"""
@@ -62,180 +70,238 @@ class Functionality:
         
     def click_input_button(self):
         """Показать канбан доску со всеми задачами"""
+        print("\n=== Отображение канбан доски ===")
+        
         if not self.is_authenticated():
+            print("Пользователь не авторизован")
             QMessageBox.warning(self.window, "Ошибка", "Необходимо войти в систему")
             return
         
-        # Создаем диалог с канбан доской
-        dialog = QDialog(self.window)
-        dialog.setWindowTitle("Мои задачи")
-        dialog.resize(1200, 800)
+        print(f"Текущий пользователь: {self.current_user}")
         
-        layout = QVBoxLayout()
-        
-        # Создаем канбан доску
-        kanban = KanbanBoard()
-        
-        # Получаем все задачи пользователя
         try:
-            tasks = self.db.get_user_tasks(self.current_user['user_id'])
+            # Очищаем текущий layout задач
+            for i in reversed(range(self.window.tasks_layout.count())): 
+                widget = self.window.tasks_layout.itemAt(i).widget()
+                if widget is not None:
+                    widget.deleteLater()
             
-            # Распределяем задачи по колонкам
-            for task in tasks:
-                if task.status == False:
-                    kanban.add_task(task, "todo")
-                elif task.status == True:
-                    kanban.add_task(task, "done")
+            # Обновляем заголовок
+            self.window.title_label.setText("Мои задачи")
+            
+            # Создаем канбан доску
+            print("Создание канбан доски")
+            kanban = KanbanBoard()
+            kanban.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            
+            # Получаем задачи пользователя и обновляем доску
+            tasks = self.db.get_user_tasks(self.current_user['user_id'])
+            if tasks:
+                kanban.update_tasks(tasks)
+            
+            # Добавляем канбан доску в layout
+            print("Добавление канбан доски в layout")
+            self.window.tasks_layout.addWidget(kanban)
+            
+            print("=== Завершено отображение канбан доски ===\n")
+            
         except Exception as e:
-            print(f"Ошибка при загрузке задач: {e}")
-        
-        layout.addWidget(kanban)
-        dialog.setLayout(layout)
-        dialog.exec_()
+            print(f"Ошибка при отображении канбан доски: {e}")
+            import traceback
+            traceback.print_exc()
         
     def click_teams_button(self):
+        """Обработка нажатия на кнопку команд"""
         if not self.is_authenticated():
-            QMessageBox.warning(self.window, "Ошибка", "Необходимо войти в систему")
+            self.show_login_window()
             return
-        
-        # Закрываем предыдущее окно команд, если оно открыто
-        if hasattr(self, 'teams_dialog') and self.teams_dialog is not None:
-            self.teams_dialog.close()
-        
-        self.teams_dialog = QDialog(self.window)
-        self.teams_dialog.setWindowTitle("Мои команды")
-        self.teams_dialog.resize(400, 500)
+
+        teams = self.db.get_user_teams(self.current_user['user_id'])
+        if not teams:
+            QMessageBox.information(self.window, "Информация", "У вас нет команд")
+            return
+
+        teams_dialog = QDialog(self.window)
+        teams_dialog.setWindowTitle("Мои команды")
+        layout = QVBoxLayout()
+
+        for team in teams:
+            team_id, name, description, role, icon_path, member_count = team
+            team_widget = QWidget()
+            team_layout = QHBoxLayout()
+
+            # Иконка команды
+            icon_label = QLabel()
+            icon = QPixmap(icon_path if os.path.exists(icon_path) else "default_icon.png")
+            icon_label.setPixmap(icon.scaled(50, 50, Qt.KeepAspectRatio))
+            team_layout.addWidget(icon_label)
+
+            # Информация о команде
+            info_layout = QVBoxLayout()
+            name_label = QLabel(f"<b>{name}</b>")
+            desc_label = QLabel(description or "Нет описания")
+            role_label = QLabel(f"Роль: {role}")
+            members_label = QLabel(f"Участников: {member_count}")
+            
+            info_layout.addWidget(name_label)
+            info_layout.addWidget(desc_label)
+            info_layout.addWidget(role_label)
+            info_layout.addWidget(members_label)
+            
+            team_layout.addLayout(info_layout)
+
+            # Кнопка редактирования
+            edit_btn = QPushButton("Редактировать")
+            edit_btn.clicked.connect(lambda checked, tid=team_id: self.edit_team_dialog(tid))
+            team_layout.addWidget(edit_btn)
+            
+            team_widget.setLayout(team_layout)
+            layout.addWidget(team_widget)
+
+        teams_dialog.setLayout(layout)
+        teams_dialog.exec_()
+
+    def edit_team_dialog(self, team_id):
+        """Диалог редактирования команды"""
+        dialog = QDialog(self.window)
+        dialog.setWindowTitle("Управление командой")
+        dialog.resize(800, 600)
         
         layout = QVBoxLayout()
+        tabs = QTabWidget()
         
-        # Получаем список команд пользователя
-        teams = self.db.get_user_teams(self.current_user['user_id'])
+        # === Вкладка с информацией о команде ===
+        info_tab = QWidget()
+        info_layout = QVBoxLayout()
         
-        if teams:
-            # Создаем список для отображения команд
-            teams_list = QListWidget()
-            teams_list.setIconSize(QSize(40, 40))  # Устанавливаем размер иконок
+        team_info = self.db.get_team_info(team_id)
+        if team_info:
+            # Название команды
+            name_layout = QHBoxLayout()
+            name_label = QLabel("Название:")
+            name_edit = QLineEdit(team_info['name'])
+            name_layout.addWidget(name_label)
+            name_layout.addWidget(name_edit)
+            info_layout.addLayout(name_layout)
             
-            for team in teams:
-                team_id, name, description, role, icon_path, member_count = team  # Добавлен member_count
-                
-                # Создаем виджет для элемента списка
-                item_widget = QWidget()
-                item_layout = QHBoxLayout()
-                item_widget.setLayout(item_layout)
-                
-                # Аватар команды
-                avatar_label = QLabel()
-                avatar_label.setFixedSize(40, 40)
-                if icon_path and os.path.exists(icon_path):
-                    pixmap = QPixmap(icon_path)
-                    avatar_label.setPixmap(pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-                    avatar_label.setStyleSheet("""
-                        QLabel {
-                            border: 1px solid #ccc;
-                            border-radius: 20px;
-                            padding: 2px;
-                        }
-                    """)
-                else:
-                    # Если нет аватара, показываем первую букву названия команды
-                    avatar_label.setText(name[0].upper())
-                    avatar_label.setAlignment(Qt.AlignCenter)
-                    avatar_label.setStyleSheet("""
-                        QLabel {
-                            background-color: #4CAF50;
-                            color: white;
-                            border-radius: 20px;
-                            font-size: 18px;
-                            font-weight: bold;
-                        }
-                    """)
-                
-                # Информация о команде
-                info_layout = QVBoxLayout()
-                name_label = QLabel(f"{name}")
-                name_label.setStyleSheet("font-weight: bold; font-size: 14px;")
-                role_label = QLabel(f"Роль: {role}")
-                role_label.setStyleSheet("color: #666; font-size: 12px;")
-                info_layout.addWidget(name_label)
-                info_layout.addWidget(role_label)
-                
-                item_layout.addWidget(avatar_label)
-                item_layout.addLayout(info_layout)
-                item_layout.addStretch()
-                
-                # Создаем элемент списка
-                item = QListWidgetItem()
-                item.setData(Qt.UserRole, team_id)  # Сохраняем ID команды
-                item.setData(Qt.UserRole + 1, name)  # Сохраняем имя команды
-                item.setSizeHint(item_widget.sizeHint())
-                
-                teams_list.addItem(item)
-                teams_list.setItemWidget(item, item_widget)
+            # Описание команды
+            desc_layout = QVBoxLayout()
+            desc_label = QLabel("Описание:")
+            desc_edit = QTextEdit(team_info['description'] or "")
+            desc_layout.addWidget(desc_label)
+            desc_layout.addWidget(desc_edit)
+            info_layout.addLayout(desc_layout)
             
-            # Обновляем обработчик клика
-            def on_team_click(item):
-                team_id = item.data(Qt.UserRole)
-                team_name = item.data(Qt.UserRole + 1)
-                self.teams_dialog.close()
-                # Используем QTimer вместо after
-                QTimer.singleShot(100, lambda: self.show_team_dialog(team_id, team_name))
+            # Проекты команды
+            projects_group = QGroupBox("Проекты")
+            projects_layout = QVBoxLayout()
             
-            teams_list.itemClicked.connect(on_team_click)
+            # Список проектов
+            projects = self.db.get_team_projects(team_id)
+            projects_list = QListWidget()
+            if projects:
+                for project in projects:
+                    try:
+                        project_id = project[0]
+                        name = project[1]
+                        description = project[2] if len(project) > 2 else None
+                        created_at = project[3] if len(project) > 3 else None
+                        
+                        item = QListWidgetItem(f"{name}")
+                        if description:
+                            item.setToolTip(description)
+                        item.setData(Qt.UserRole, project_id)
+                        projects_list.addItem(item)
+                    except Exception as e:
+                        print(f"Ошибка при добавлении проекта в список: {e}")
+                        continue
+                projects_layout.addWidget(projects_list)
+                
+                # Добавляем двойной клик по проекту для редактирования
+                projects_list.itemDoubleClicked.connect(
+                    lambda item: self.show_edit_project_dialog(item.data(Qt.UserRole))
+                )
             
-            # Стилизация списка
-            teams_list.setStyleSheet("""
-                QListWidget {
-                    border: 1px solid #ccc;
-                    border-radius: 5px;
-                    padding: 5px;
+            # Кнопка создания проекта
+            create_project_btn = QPushButton("Создать новый проект")
+            create_project_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    padding: 8px;
+                    border: none;
+                    border-radius: 4px;
                 }
-                QListWidget::item {
-                    border-bottom: 1px solid #eee;
-                    padding: 5px;
-                }
-                QListWidget::item:hover {
-                    background-color: #f5f5f5;
-                }
-                QListWidget::item:selected {
-                    background-color: #e3f2fd;
-                    color: black;
+                QPushButton:hover {
+                    background-color: #45a049;
                 }
             """)
+            create_project_btn.clicked.connect(lambda: self.show_create_project_dialog(team_id))
+            projects_layout.addWidget(create_project_btn)
             
-            layout.addWidget(teams_list)
-        else:
-            no_teams_label = QLabel("Пока вы не состоите ни в каких командах")
-            no_teams_label.setStyleSheet("""
-                QLabel {
-                    color: #666;
-                    padding: 20px;
-                    font-size: 14px;
-                }
-            """)
-            no_teams_label.setAlignment(Qt.AlignCenter)
-            layout.addWidget(no_teams_label)
+            projects_group.setLayout(projects_layout)
+            info_layout.addWidget(projects_group)
+            
+            # Кнопка сохранения
+            save_btn = QPushButton("Сохранить изменения")
+            save_btn.clicked.connect(lambda: self.save_team_changes(team_id, name_edit.text(), desc_edit.toPlainText(), dialog))
+            info_layout.addWidget(save_btn)
         
-        # Кнопка создания команды
-        create_team_btn = QPushButton("Создать команду")
-        create_team_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                padding: 10px 20px;
-                border-radius: 5px;
-                margin-top: 10px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
-        create_team_btn.clicked.connect(lambda: self.create_team_dialog())
-        layout.addWidget(create_team_btn)
+        info_tab.setLayout(info_layout)
         
-        self.teams_dialog.setLayout(layout)
-        self.teams_dialog.show()
+        # === Вкладка с участниками ===
+        members_tab = QWidget()
+        members_layout = QVBoxLayout()
+        
+        members = self.db.get_team_members(team_id)
+        if members:
+            members_list = QListWidget()
+            for member in members:
+                item = QListWidgetItem(f"{member[1]} ({member[2]})")  # username и роль
+                item.setData(Qt.UserRole, member[0])  # user_id
+                members_list.addItem(item)
+            members_layout.addWidget(members_list)
+            
+            # Кнопки управления участниками
+            btn_layout = QHBoxLayout()
+            invite_btn = QPushButton("Пригласить участника")
+            remove_btn = QPushButton("Удалить участника")
+            
+            invite_btn.clicked.connect(lambda: self.show_invite_dialog(team_id))
+            remove_btn.clicked.connect(lambda: self.remove_team_member(team_id, members_list.currentItem().data(Qt.UserRole) if members_list.currentItem() else None))
+            
+            btn_layout.addWidget(invite_btn)
+            btn_layout.addWidget(remove_btn)
+            members_layout.addLayout(btn_layout)
+        
+        members_tab.setLayout(members_layout)
+        
+        # Добавляем вкладки
+        tabs.addTab(info_tab, "Информация")
+        tabs.addTab(members_tab, "Участники")
+        
+        layout.addWidget(tabs)
+        dialog.setLayout(layout)
+        dialog.exec_()
+
+    def remove_team_member(self, team_id: int, user_id: int, dialog=None):
+        """Исключение участника из команды"""
+        reply = QMessageBox.question(
+            self.window,
+            'Подтверждение',
+            'Вы уверены, что хотите исключить этого участника?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            if self.db.remove_team_member(team_id, user_id):
+                QMessageBox.information(self.window, "Успех", "Участник исключен из команды")
+                if dialog:
+                    dialog.close()
+                    self.edit_team_dialog(team_id)  # Обновляем диалог
+            else:
+                QMessageBox.warning(self.window, "Ошибка", "Не удалось исключить участника")
 
     def click_calendar_button(self):
         dlg = QDialog(self.window)
@@ -260,180 +326,12 @@ class Functionality:
             QMessageBox.warning(self.window, "Ошибка", "Необходимо войти в систему")
             return
             
-        if not self.window.current_project_id:
-            QMessageBox.warning(self.window, "Ошибка", "Сначала выберите проект")
-            return
-            
-        # Получаем информацию о текущем проекте
-        project_info = self.db.get_project_info(self.window.current_project_id)
-        if not project_info:
-            QMessageBox.warning(self.window, "Ошибка", "Ошибка получения информации о проекте")
-            return
-            
-        dlg = QDialog(self.window)
-        dlg.setWindowTitle(f"Создание задачи в проекте: {project_info['name']}")
-        dlg.resize(500, 400)
-        
-        layout = QVBoxLayout()
-        
-        # Название задачи
-        title = QLineEdit()
-        title.setPlaceholderText("Название задачи")
-        layout.addWidget(title)
-        
-        # Описание
-        description = QTextEdit()
-        description.setPlaceholderText("Описание задачи")
-        layout.addWidget(description)
-        
-        # Приоритет
-        priority_label = QLabel("Приоритет (1-5):")
-        layout.addWidget(priority_label)
-        priority = QComboBox()
-        priority.addItems(['1', '2', '3', '4', '5'])
-        layout.addWidget(priority)
-        
-        # Дедлайн
-        deadline_layout = QHBoxLayout()
-        deadline_label = QLabel("Дедлайн:")
-        deadline_date = QLineEdit()
-        deadline_date.setReadOnly(True)
-        deadline_time = QTimeEdit()
-        deadline_time.setTime(QTime.currentTime())
-        
-        deadline_layout.addWidget(deadline_label)
-        deadline_layout.addWidget(deadline_date)
-        deadline_layout.addWidget(deadline_time)
-        layout.addLayout(deadline_layout)
-        
-        calendar = QCalendarWidget()
-        calendar.clicked.connect(lambda date: deadline_date.setText(date.toString("dd.MM.yyyy")))
-        layout.addWidget(calendar)
-        
-        # Уведомления
-        notification_layout = QHBoxLayout()
-        notification_label = QLabel("Уведомить за:")
-        notification_preset = QComboBox()
-        notification_preset.addItems([
-            "В момент дедлайна",
-            "5 минут",
-            "10 минут",
-            "15 минут",
-            "30 минут",
-            "1 час",
-            "Другое..."
-        ])
-        
-        notification_custom = QLineEdit()
-        notification_custom.setPlaceholderText("минут")
-        notification_custom.setVisible(False)
-        
-        def on_notification_changed(text):
-            notification_custom.setVisible(text == "Другое...")
-        
-        notification_preset.currentTextChanged.connect(on_notification_changed)
-        
-        notification_layout.addWidget(notification_label)
-        notification_layout.addWidget(notification_preset)
-        notification_layout.addWidget(notification_custom)
-        
-        layout.addLayout(notification_layout)
-        
-        # Кнопка создания
-        button_layout = QHBoxLayout()
-        create_button = QPushButton("Создать задачу")
-        create_button.setStyleSheet(self.window.style_button())
-        button_layout.addWidget(create_button)
-        
-        def on_create_button_clicked():
-            if not title.text():
-                QMessageBox.warning(dlg, "Ошибка", "Введите название задачи")
-                return
-            
-            if not deadline_date.text():
-                QMessageBox.warning(dlg, "Ошибка", "Выберите дату дедлайна")
-                return
-            
-            try:
-                deadline_str = f"{deadline_date.text()} {deadline_time.time().toString('HH:mm')}"
-                deadline_datetime = datetime.strptime(deadline_str, "%d.%m.%Y %H:%M")
-                
-                notification_preset_text = notification_preset.currentText()
-                if notification_preset_text == "В момент дедлайна":
-                    notification_time = deadline_datetime
-                elif notification_preset_text == "Другое...":
-                    try:
-                        minutes = int(notification_custom.text())
-                        notification_time = deadline_datetime - timedelta(minutes=minutes)
-                    except ValueError:
-                        QMessageBox.warning(dlg, "Ошибка", "Введите корректное количество минут")
-                        return
-                else:
-                    time_map = {
-                        "5 минут": 5,
-                        "10 минут": 10,
-                        "15 минут": 15,
-                        "30 минут": 30,
-                        "1 час": 60
-                    }
-                    minutes = time_map.get(notification_preset_text, 0)
-                    notification_time = deadline_datetime - timedelta(minutes=minutes)
-                
-                # Отладочный вывод параметров задачи
-                print("=== Создание новой задачи ===")
-                print(f"Название: {title.text()}")
-                print(f"Описание: {description.toPlainText()}")
-                print(f"ID пользователя: {self.current_user['user_id']}")
-                print(f"Дедлайн: {deadline_datetime}")
-                print(f"Приоритет: {priority.currentText()}")
-                print(f"ID проекта: {self.window.current_project_id}")
-                print(f"ID команды: {project_info['team_id']}")
-                print(f"Время уведомления: {notification_time}")
-                print(f"Время создания: {datetime.now()}")
-                
-                task = Task(
-                    title=title.text(),
-                    description=description.toPlainText(),
-                    user_id=self.current_user['user_id'],
-                    status=False,
-                    deadline=deadline_datetime,
-                    priority=int(priority.currentText()),
-                    project_id=self.window.current_project_id,
-                    team_id=project_info['team_id'],
-                    notification_time=notification_time,
-                    notified=False,
-                    created_at=datetime.now()
-                )
-                
-                # Отладочный вывод объекта задачи
-                print("\n=== Объект Task ===")
-                print(f"Атрибуты задачи: {task.__dict__}")
-                
-                task_id = self.db.add_task(task)
-                if task_id:
-                    print(f"\nЗадача успешно создана с ID: {task_id}")
-                    QMessageBox.information(dlg, "Успех", "Задача создана успешно!")
-                    dlg.accept()
-                    # Обновляем отображение задач
-                    self.window.display_project_tasks(self.window.current_project_id, project_info['name'])
-                else:
-                    print("\nОшибка: Не удалось создать задачу")
-                    QMessageBox.critical(dlg, "Ошибка", "Не удалось создать задачу")
-                
-            except Exception as e:
-                print(f"\n=== Ошибка при создании задачи ===")
-                print(f"Тип ошибки: {type(e).__name__}")
-                print(f"Текст ошибки: {str(e)}")
-                print(f"Полная информация:")
-                import traceback
-                traceback.print_exc()
-                QMessageBox.critical(dlg, "Ошибка", f"Ошибка при создании задачи: {str(e)}")
-        
-        create_button.clicked.connect(on_create_button_clicked)
-        layout.addLayout(button_layout)
-        
-        dlg.setLayout(layout)
-        dlg.exec()
+        dialog = CreateTaskDialog(
+            parent=self.window,
+            db=self.db,
+            current_user=self.current_user
+        )
+        dialog.exec_()
         
     def validate_email(self, email: str) -> bool:
         """Проверка валидности email"""
@@ -1021,6 +919,18 @@ class Functionality:
             print(f"Ошибка при создании диалога регистрации: {e}")
             import traceback
             traceback.print_exc()
+
+    def save_team_changes(self, team_id: int, name: str, description: str, dialog=None):
+        """Сохранение изменений информации о команде"""
+        try:
+            if self.db.update_team_info(team_id, name, description):
+                QMessageBox.information(self.window, "Успех", "Изменения сохранены")
+                if dialog:
+                    dialog.accept()
+            else:
+                QMessageBox.warning(self.window, "Ошибка", "Не удалось сохранить изменения")
+        except Exception as e:
+            QMessageBox.critical(self.window, "Ошибка", f"Произошла ошибка: {str(e)}")
 
 
 

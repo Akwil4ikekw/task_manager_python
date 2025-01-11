@@ -9,10 +9,13 @@ from PIL import Image
 from Team import Team
 from datetime import datetime
 from datetime import datetime, timedelta
-from kanban_board import KanbanBoard
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+                            QPushButton, QLabel, QScrollArea)
+from PyQt5.QtCore import Qt
 from functionality import Functionality
-from Task import Task
-
+import os
+from kanban_board import KanbanBoard
+from dialogs import CreateTaskDialog  # Добавляем импорт
 
 class Window(QMainWindow):
     def __init__(self):
@@ -256,61 +259,29 @@ class Window(QMainWindow):
             return
         
         try:
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Создание новой задачи")
-            layout = QVBoxLayout(dialog)
-            
-            # Название
-            title_edit = QLineEdit()
-            layout.addWidget(QLabel("Название:"))
-            layout.addWidget(title_edit)
-            
-            # Описание
-            desc_edit = QTextEdit()
-            layout.addWidget(QLabel("Описание:"))
-            layout.addWidget(desc_edit)
-            
-            # Дедлайн
-            deadline_edit = QDateTimeEdit(QDateTime.currentDateTime())
-            deadline_edit.setCalendarPopup(True)
-            layout.addWidget(QLabel("Дедлайн:"))
-            layout.addWidget(deadline_edit)
-            
-            # Приоритет
-            priority_edit = QSpinBox()
-            priority_edit.setRange(1, 5)
-            priority_edit.setValue(3)
-            layout.addWidget(QLabel("Приоритет (1-5):"))
-            layout.addWidget(priority_edit)
-            
-            # Кнопки
-            buttons = QHBoxLayout()
-            save_btn = QPushButton("Создать")
-            cancel_btn = QPushButton("Отмена")
-            
-            save_btn.clicked.connect(dialog.accept)
-            cancel_btn.clicked.connect(dialog.reject)
-            
-            buttons.addWidget(save_btn)
-            buttons.addWidget(cancel_btn)
-            layout.addLayout(buttons)
+            dialog = CreateTaskDialog(
+                parent=self,
+                db=self.func.db,
+                current_user=self.func.current_user
+            )
             
             if dialog.exec_() == QDialog.Accepted:
-                # Создаем новую задачу
-                
+                data = dialog.get_data()
                 new_task = Task(
-                    title=title_edit.text(),
-                    description=desc_edit.toPlainText(),
-                    deadline=deadline_edit.dateTime().toPyDateTime(),
-                    priority=priority_edit.value(),
+                    title=data['title'],
+                    description=data['description'],
                     user_id=self.func.current_user['user_id'],
-                    status=False
+                    status=0,  # 0 - не начато
+                    deadline=data['deadline'],
+                    created_at=datetime.now(),
+                    team_id=data['team_id'],
+                    project_id=data['project_id'],
+                    priority=data['priority']
                 )
                 
-                # Сохраняем в базе данных
                 if self.func.db.create_task(new_task):
-                    # Обновляем отображение канбан доски
-                    self.click_input_button()
+                    self.click_input_button()  # Обновляем канбан доску
+                    QMessageBox.information(self, "Успех", "Задача создана")
                 else:
                     QMessageBox.critical(self, "Ошибка", "Не удалось создать задачу")
                 

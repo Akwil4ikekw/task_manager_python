@@ -2,7 +2,7 @@ import psycopg2
 from datetime import datetime
 from Task import Task
 from Team import Team
-import hashlib
+
 
 class Database:
     def __init__(self):
@@ -67,30 +67,44 @@ class Database:
             print(f"Ошибка при проверке email: {e}")
             raise
 
-    def create_task(self, task: Task) -> int:
+    def create_task(self, task: Task) -> bool:
+        """Создание новой задачи"""
         try:
             cursor = self.connection.cursor()
-            cursor.execute(
-                """
-                INSERT INTO public.task (
-                    title, description, user_id, status, 
-                    deadline, priority, project_id, team_id
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING task_id
-                """,
-                (
-                    task.name, task.description, task.user_id,
-                    task.status, task.deadline, task.priority,
-                    task.project_id, task.team_id
-                )
-            )
-            return cursor.fetchone()[0]
+            cursor.execute("""
+                INSERT INTO tasks (
+                    title, description, deadline, priority,
+                    project_id, team_id, user_id, created_at,
+                    notification_time, notified, status
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                ) RETURNING task_id
+            """, (
+                task.title,  # Используем title вместо name
+                task.description,
+                task.deadline,
+                task.priority,
+                task.project_id,
+                task.team_id,
+                task.user_id,
+                task.created_at,
+                task.notification_time,
+                task.notified,
+                task.status
+            ))
+            
+            task_id = cursor.fetchone()[0]
+            self.connection.commit()
+            print(f"Создана задача с ID: {task_id}")
+            return True
+            
         except Exception as e:
             print(f"Ошибка при создании задачи: {e}")
-            raise
+            self.connection.rollback()
+            return False
 
-    def add_task(self, task):
+    def add_task(self, task: Task) -> int:
+        """Добавление новой задачи"""
         try:
             cursor = self.connection.cursor()
             query = """
@@ -114,18 +128,13 @@ class Database:
                 task.notified,
                 task.created_at
             )
-            print("SQL Query:", query)
-            print("Values:", values)
             cursor.execute(query, values)
-            self.connection.commit()  # Добавляем явный commit
             task_id = cursor.fetchone()[0]
+            self.connection.commit()
             return task_id
         except Exception as e:
-            print(f"Ошибка при добавлении задачи:")
-            print(f"Тип ошибки: {type(e).__name__}")
-            print(f"Текст ошибки: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            print(f"Ошибка при добавлении задачи: {e}")
+            self.connection.rollback()
             return None
 
     def get_user_teams(self, user_id: int) -> list:
@@ -133,20 +142,16 @@ class Database:
         try:
             cursor = self.connection.cursor()
             cursor.execute("""
-                SELECT t.team_id, t.name, t.description
+                SELECT t.team_id, t.name, t.description, 
+                       tm.role, 
+                       COALESCE(t.icon_path, 'default_icon.png') as icon_path,
+                       (SELECT COUNT(*) FROM team_member WHERE team_id = t.team_id) as member_count
                 FROM team t
                 JOIN team_member tm ON t.team_id = tm.team_id
                 WHERE tm.user_id = %s
+                ORDER BY t.name
             """, (user_id,))
-            
-            teams = []
-            for row in cursor.fetchall():
-                teams.append({
-                    'team_id': row[0],
-                    'name': row[1],
-                    'description': row[2]
-                })
-            return teams
+            return cursor.fetchall()
         except Exception as e:
             print(f"Ошибка при получении списка команд: {e}")
             return []
@@ -195,13 +200,13 @@ class Database:
         
 
     def get_team_projects(self, team_id: int) -> list:
-        """Получает список проектов команды"""
+        """Получение списка проектов команды"""
         try:
             cursor = self.connection.cursor()
             cursor.execute("""
-                SELECT project_id, name, description, created_at
-                FROM project
-                WHERE team_id = %s
+                SELECT project_id, name, description, created_at 
+                FROM project 
+                WHERE team_id = %s 
                 ORDER BY created_at DESC
             """, (team_id,))
             return cursor.fetchall()
@@ -224,30 +229,52 @@ class Database:
             raise
 
     def get_team_members(self, team_id: int) -> list:
-        """Получает список участников команды"""
+        """Получение списка участников команды"""
         try:
             cursor = self.connection.cursor()
             cursor.execute("""
-                SELECT u.user_id, u.username, tm.role
-                FROM personal_user u
-                JOIN team_member tm ON u.user_id = tm.user_id
+                SELECT pu.user_id, pu.username, tm.role
+                FROM personal_user pu
+                JOIN team_member tm ON pu.user_id = tm.user_id
                 WHERE tm.team_id = %s
+                ORDER BY tm.role DESC, pu.username
             """, (team_id,))
-            return cursor.fetchall()
+            return cursor.fetchall()  # Возвращаем список кортежей (user_id, username, role)
         except Exception as e:
-            print(f"Ошибка при получении участников команды: {e}")
+            print(f"Ошибка при получении списка участников: {e}")
             return []
 
-    def invite_user_to_team(self, user_id, team_id):
+    def invite_user_to_team(self, team_id: int, email: str) -> bool:
+        """Приглашение пользователя в команду"""
         try:
-            self.cursor.execute("""
-                INSERT INTO user_team (user_id, team_id, role)
+            # Находим пользователя по email
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT user_id FROM personal_user WHERE email = %s
+            """, (email,))
+            row = cursor.fetchone()
+            if not row:
+                return False
+            
+            user_id = row[0]
+            
+            # Проверяем, не состоит ли уже пользователь в команде
+            cursor.execute("""
+                SELECT user_id FROM team_member 
+                WHERE team_id = %s AND user_id = %s
+            """, (team_id, user_id))
+            if cursor.fetchone():
+                return False
+            
+            # Добавляем пользователя в команду
+            cursor.execute("""
+                INSERT INTO team_member (team_id, user_id, role)
                 VALUES (%s, %s, 'member')
-            """, (user_id, team_id))
-            self.conn.commit()
+            """, (team_id, user_id))
+            self.connection.commit()
             return True
         except Exception as e:
-            print(f"Ошибка при добавлении пользователя в команду: {e}")
+            print(f"Ошибка при приглашении пользователя: {e}")
             return False
 
     def get_users_not_in_team(self, team_id):
@@ -310,33 +337,25 @@ class Database:
             return []
 
     def get_project_tasks(self, project_id: int) -> list:
-        """Получение всех задач проекта"""
+        """Получение всех задач проекта с учетом статуса"""
         try:
-            print(f"\n=== Получение задач для проекта {project_id} ===")
             cursor = self.connection.cursor()
-            query = """
+            cursor.execute("""
                 SELECT task_id, title, description, user_id, status, deadline, 
                        priority, project_id, team_id, notification_time, 
                        notified, created_at
                 FROM tasks 
                 WHERE project_id = %s
-                ORDER BY deadline ASC
-            """
-            print(f"SQL Query: {query}")
-            print(f"Project ID: {project_id}")
-            
-            cursor.execute(query, (project_id,))
-            rows = cursor.fetchall()
-            print(f"Получено строк из БД: {len(rows)}")
+                ORDER BY created_at DESC
+            """, (project_id,))
             
             tasks = []
-            for row in rows:
-                print(f"\nОбработка строки: {row}")
+            for row in cursor.fetchall():
                 task = Task(
                     title=row[1],
                     description=row[2],
                     user_id=row[3],
-                    status=row[4],
+                    status=row[4] if row[4] is not None else 1,  # Если статус None, считаем задачу в работе
                     deadline=row[5],
                     priority=row[6],
                     project_id=row[7],
@@ -346,17 +365,11 @@ class Database:
                     created_at=row[11]
                 )
                 task.task_id = row[0]
+                print(f"[DEBUG] Загружена задача {task.task_id} со статусом {task.status}")
                 tasks.append(task)
-                print(f"Создан объект Task: {task.__dict__}")
-            
-            print(f"\nВсего создано объектов Task: {len(tasks)}")
             return tasks
         except Exception as e:
-            print(f"\n=== Ошибка при получении задач проекта ===")
-            print(f"Тип ошибки: {type(e).__name__}")
-            print(f"Текст ошибки: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            print(f"[ERROR] Ошибка при получении задач проекта: {e}")
             return []
 
     def get_project_info(self, project_id: int) -> dict:
@@ -384,7 +397,7 @@ class Database:
             return None
 
     def create_tables(self):
-        """Создание необходимых таблиц"""
+        """Создание таблиц"""
         try:
             cursor = self.connection.cursor()
             cursor.execute("""
@@ -392,21 +405,20 @@ class Database:
                     task_id SERIAL PRIMARY KEY,
                     title VARCHAR(255) NOT NULL,
                     description TEXT,
-                    user_id INTEGER REFERENCES personal_user(user_id),
+                    user_id INTEGER NOT NULL,
                     status BOOLEAN DEFAULT FALSE,
                     deadline TIMESTAMP,
                     priority INTEGER DEFAULT 1,
-                    project_id INTEGER REFERENCES project(project_id),
-                    team_id INTEGER REFERENCES team(team_id),
+                    project_id INTEGER,
+                    team_id INTEGER,
                     notification_time TIMESTAMP,
                     notified BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             self.connection.commit()
-            print("Таблица tasks успешно создана")
         except Exception as e:
-            print(f"Ошибка при создании таблиц: {e}")
+            print(f"Ошибка при создании таблиц: {str(e)}")
 
     def update_tasks_table(self):
         """Обновление структуры таблицы tasks"""
@@ -423,9 +435,8 @@ class Database:
                 END $$;
             """)
             self.connection.commit()
-            print("Структура таблицы tasks успешно обновлена")
         except Exception as e:
-            print(f"Ошибка при обновлении таблицы tasks: {e}")
+            print(f"Ошибка при обновлении таблицы tasks: {str(e)}")
 
     def get_team_name(self, team_id: int) -> str:
         """Получение названия команды по ID"""
@@ -443,69 +454,95 @@ class Database:
             return "Без команды"
 
     def get_user_tasks(self, user_id: int) -> list:
-        """Получение всех задач пользователя"""
-        try:
-            print(f"\n=== Получение задач для пользователя {user_id} ===")
-            cursor = self.connection.cursor()
-            query = """
-                SELECT task_id, title, description, user_id, status, deadline, 
-                       priority, project_id, team_id, notification_time, 
-                       notified, created_at
-                FROM tasks 
-                WHERE user_id = %s
-                ORDER BY created_at DESC
-            """
-            print(f"SQL Query: {query}")
-            cursor.execute(query, (user_id,))
-            
-            rows = cursor.fetchall()
-            print(f"Получено строк из БД: {len(rows)}")
-            
-            tasks = []
-            for row in rows:
-                print(f"\nОбработка строки: {row}")
-                task = Task(
-                    title=row[1],
-                    description=row[2],
-                    user_id=row[3],
-                    status=row[4],
-                    deadline=row[5],
-                    priority=row[6],
-                    project_id=row[7],
-                    team_id=row[8],
-                    notification_time=row[9],
-                    notified=row[10],
-                    created_at=row[11]
-                )
-                task.task_id = row[0]
-                tasks.append(task)
-                print(f"Создан объект Task: {task.__dict__}")
-            
-            print(f"\nВсего создано объектов Task: {len(tasks)}")
-            return tasks
-        except Exception as e:
-            print(f"\n=== Ошибка при получении задач пользователя ===")
-            print(f"Тип ошибки: {type(e).__name__}")
-            print(f"Текст ошибки: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return []
-
-    def update_task_status(self, task_id: int, status: bool) -> bool:
-        """Обновление статуса задачи"""
+        """Получение задач пользователя"""
         try:
             cursor = self.connection.cursor()
             cursor.execute("""
-                UPDATE tasks 
-                SET status = %s 
-                WHERE task_id = %s
-            """, (status, task_id))
-            self.connection.commit()
-            return True
+                SELECT task_id, title, description, deadline, priority,
+                       project_id, team_id, user_id, created_at,
+                       notification_time, notified, status
+                FROM tasks
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+            """, (user_id,))
+            tasks = cursor.fetchall()
+            return [Task(
+                task_id=row[0],
+                title=row[1],
+                description=row[2],
+                deadline=row[3],
+                priority=row[4],
+                project_id=row[5],
+                team_id=row[6],
+                user_id=row[7],
+                created_at=row[8],
+                notification_time=row[9],
+                notified=row[10],
+                status=row[11]  # 0 - новые, 1 - в работе, 2 - завершенные
+            ) for row in tasks]
         except Exception as e:
-            print(f"Ошибка при обновлении статуса задачи: {e}")
+            print(f"Ошибка при получении задач пользователя: {e}")
+            return []
+
+    def update_task_status(self, task_id: int, new_status: int) -> bool:
+        """Обновление статуса задачи"""
+        try:
+            print(f"[DEBUG] Попытка обновить задачу {task_id} на статус {new_status}")
+            
+            # Проверяем валидность нового статуса
+            if new_status not in [0, 1, 2]:
+                print(f"[ERROR] Некорректный статус: {new_status}")
+                return False
+            
+            cursor = self.connection.cursor()
+            
+            # Получаем текущий статус
+            cursor.execute("SELECT status FROM tasks WHERE task_id = %s", (task_id,))
+            current = cursor.fetchone()
+            
+            if current is None:
+                print(f"[ERROR] Задача {task_id} не найдена")
+                return False
+            
+            print(f"[DEBUG] Текущий статус в БД: {current[0]}")
+            
+            # Обновляем статус только если он изменился
+            if current[0] != new_status:
+                cursor.execute("""
+                    UPDATE tasks 
+                    SET status = %s 
+                    WHERE task_id = %s
+                    RETURNING task_id, status
+                """, (new_status, task_id))
+                
+                updated = cursor.fetchone()
+                self.connection.commit()
+                
+                success = updated is not None
+                print(f"[DEBUG] Статус обновлен успешно: {success}")
+                print(f"[DEBUG] Новый статус в БД: {updated[1] if updated else None}")
+                return success
+            else:
+                print("[DEBUG] Статус не изменился, обновление не требуется")
+                return True
+            
+        except Exception as e:
+            print(f"[ERROR] Ошибка при обновлении статуса задачи: {e}")
+            import traceback
+            traceback.print_exc()
             self.connection.rollback()
             return False
+
+    def get_task_status(self, task_id: int) -> int:
+        """Получение текущего статуса задачи"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT status FROM tasks WHERE task_id = %s", (task_id,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            print(f"[ERROR] Ошибка при получении статуса задачи: {e}")
+            return None
 
     def update_task(self, task) -> bool:
         """Обновление задачи"""
@@ -554,5 +591,248 @@ class Database:
         except Exception as e:
             print(f"Ошибка при получении названия проекта: {e}")
             return "Без проекта"
+
+    def get_team_info(self, team_id: int) -> dict:
+        """Получение информации о команде"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT team_id, name, description, created_at, icon_path, creator_id
+                FROM team
+                WHERE team_id = %s
+            """, (team_id,))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'team_id': row[0],
+                    'name': row[1],
+                    'description': row[2],
+                    'created_at': row[3],
+                    'icon_path': row[4],
+                    'creator_id': row[5]
+                }
+            return None
+        except Exception as e:
+            print(f"Ошибка при получении информации о команде: {e}")
+            return None
+
+    def is_team_admin(self, team_id: int, user_id: int) -> bool:
+        """Проверка, является ли пользователь администратором команды"""
+        try:
+            cursor = self.connection.cursor()
+            
+            # Сначала проверяем, является ли пользователь создателем команды
+            cursor.execute("""
+                SELECT 1 FROM team 
+                WHERE team_id = %s AND creator_id = %s
+            """, (team_id, user_id))
+            if cursor.fetchone():
+                print(f"Пользователь {user_id} является создателем команды {team_id}")
+                return True
+            
+            # Затем проверяем роль в team_member
+            cursor.execute("""
+                SELECT 1 FROM team_member 
+                WHERE team_id = %s AND user_id = %s AND role = 'admin'
+            """, (team_id, user_id))
+            result = cursor.fetchone() is not None
+            print(f"Пользователь {user_id} {'' if result else 'не '}является администратором команды {team_id}")
+            return result
+        except Exception as e:
+            print(f"Ошибка при проверке прав администратора: {e}")
+            return False
+
+    def update_team(self, team_id: int, name: str, description: str) -> bool:
+        """Обновление информации о команде"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                UPDATE team
+                SET name = %s, description = %s
+                WHERE team_id = %s
+            """, (name, description, team_id))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка при обновлении команды: {e}")
+            return False
+
+    def remove_team_member(self, team_id: int, user_id: int) -> bool:
+        """Исключение участника из команды"""
+        try:
+            cursor = self.connection.cursor()
+            
+            # Проверяем, не является ли пользователь создателем команды
+            cursor.execute("""
+                SELECT creator_id FROM team WHERE team_id = %s
+            """, (team_id,))
+            creator_id = cursor.fetchone()[0]
+            
+            if creator_id == user_id:
+                print("Нельзя удалить создателя команды")
+                return False
+            
+            # Удаляем участника из team_member и проверяем результат
+            cursor.execute("""
+                DELETE FROM team_member
+                WHERE team_id = %s AND user_id = %s
+                RETURNING user_id
+            """, (team_id, user_id))
+            
+            result = cursor.fetchone()
+            if not result:
+                print(f"Участник не найден в team_member (team_id={team_id}, user_id={user_id})")
+                self.connection.rollback()
+                return False
+            
+            # Проверяем, есть ли записи в user_team
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM user_team 
+                    WHERE team_id = %s AND user_id = %s
+                )
+            """, (team_id, user_id))
+            
+            if cursor.fetchone()[0]:
+                cursor.execute("""
+                    DELETE FROM user_team
+                    WHERE team_id = %s AND user_id = %s
+                    RETURNING user_id
+                """, (team_id, user_id))
+                
+                if not cursor.fetchone():
+                    print("Ошибка при удалении из user_team")
+                    self.connection.rollback()
+                    return False
+            
+            self.connection.commit()
+            print(f"Участник успешно удален (team_id={team_id}, user_id={user_id})")
+            return True
+            
+        except Exception as e:
+            print(f"Ошибка при исключении участника: {e}")
+            import traceback
+            traceback.print_exc()
+            self.connection.rollback()
+            return False
+
+    def get_team_task_stats(self, team_id: int) -> dict:
+        """Получение статистики задач команды"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = true THEN 1 ELSE 0 END) as completed,
+                    SUM(CASE WHEN status = false THEN 1 ELSE 0 END) as in_progress
+                FROM tasks
+                WHERE team_id = %s
+            """, (team_id,))
+            row = cursor.fetchone()
+            return {
+                'total': row[0] or 0,
+                'completed': row[1] or 0,
+                'in_progress': row[2] or 0
+            }
+        except Exception as e:
+            print(f"Ошибка при получении статистики задач: {e}")
+            return {'total': 0, 'completed': 0, 'in_progress': 0}
+
+    def get_team_tasks(self, team_id: int) -> list:
+        """Получение всех задач команды"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT task_id, title, description, user_id, status, deadline, 
+                       priority, project_id, team_id, notification_time, 
+                       notified, created_at
+                FROM tasks 
+                WHERE team_id = %s
+                ORDER BY created_at DESC
+            """, (team_id,))
+            
+            tasks = []
+            for row in cursor.fetchall():
+                task = Task(
+                    title=row[1],
+                    description=row[2],
+                    user_id=row[3],
+                    status=row[4],  # integer status (0, 1, 2)
+                    deadline=row[5],
+                    priority=row[6],
+                    project_id=row[7],
+                    team_id=row[8],
+                    notification_time=row[9],
+                    notified=row[10],
+                    created_at=row[11]
+                )
+                task.task_id = row[0]
+                tasks.append(task)
+            return tasks
+        except Exception as e:
+            print(f"Ошибка при получении задач команды: {e}")
+            return []
+
+    def get_teams_simple(self, user_id: int) -> list:
+        """Получение упрощенного списка команд пользователя (для создания задач)"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT t.team_id, t.name
+                FROM team t
+                JOIN team_member tm ON t.team_id = tm.team_id
+                WHERE tm.user_id = %s
+                ORDER BY t.name
+            """, (user_id,))
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Ошибка при получении списка команд: {e}")
+            return []
+
+    def update_team_info(self, team_id: int, name: str, description: str) -> bool:
+        """Обновление информации о команде"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                UPDATE team 
+                SET name = %s, description = %s 
+                WHERE team_id = %s
+            """, (name, description, team_id))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка при обновлении информации о команде: {e}")
+            self.connection.rollback()
+            return False
+
+    def get_all_tasks(self) -> list:
+        """Получение всех задач"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT task_id, title, description, deadline, priority,
+                       project_id, team_id, user_id, created_at,
+                       notification_time, notified, status
+                FROM tasks
+                ORDER BY created_at DESC
+            """)
+            tasks = cursor.fetchall()
+            return [Task(
+                task_id=row[0],
+                title=row[1],
+                description=row[2],
+                deadline=row[3],
+                priority=row[4],
+                project_id=row[5],
+                team_id=row[6],
+                user_id=row[7],
+                created_at=row[8],
+                notification_time=row[9],
+                notified=row[10],
+                status=row[11]  # Статус: 0 - новые, 1 - в работе, 2 - завершенные
+            ) for row in tasks]
+        except Exception as e:
+            print(f"Ошибка при получении задач: {e}")
+            return []
 
    
