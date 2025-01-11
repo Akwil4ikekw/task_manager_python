@@ -1,0 +1,275 @@
+From 3e1ab5d6475701492fdf0a646815796d374ec9de Mon Sep 17 00:00:00 2001
+From: Aquil <nindzy142@yandex.ru>
+Date: Sun, 12 Jan 2025 02:09:10 +0300
+Subject: [PATCH] bd+
+
+---
+ __pycache__/database.cpython-39.pyc | Bin 36709 -> 36699 bytes
+ bd.sql                              | Bin 0 -> 27676 bytes
+ database.py                         |   8 ++--
+ main.py                             |  68 ++++++++++++++++++++++++++--
+ 4 files changed, 68 insertions(+), 8 deletions(-)
+ create mode 100644 bd.sql
+
+diff --git a/__pycache__/database.cpython-39.pyc b/__pycache__/database.cpython-39.pyc
+index dcc5827eb8fa692356f2d7776597aa77deef5d8c..4ae5008047f95b8d4feaac1d1be3d1374c499704 100644
+GIT binary patch
+delta 82
+zcmaDlkLmV2Cf-C|UM>b8DEZNpzG@@y8fJc`6y_9`6xLqW8ishL6t>AHn6(+%Cx2m9
+lmE!P=;t5GC&W_Jb%u7s9EsEkO$S*EQFG?-mY|En24FLI48H4};
+
+delta 92
+zcmcaTkLl?=Cf-C|UM>b8*#EgH{q08HHO&0XDJ&_hDQvy0H4O1gDeRL^Fl#e%O#Z^G
+ts>10PB^Z*Lm>XY`SezZ7o0ylFo>~;e>R4EsnG?lkXk-jTn~hmCx&bP%94!C<
+
+diff --git a/bd.sql b/bd.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..3814b9584a7b6c0f4e4c3a4f9f3fc7b672d9aa22
+GIT binary patch
+literal 27676
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/database.py b/database.py
+index 38eacb6..ac6bc30 100644
+--- a/database.py
++++ b/database.py
+@@ -8,9 +8,9 @@ class Database:
+     def __init__(self):
+         try:
+             self.connection = psycopg2.connect(
+-                database='Team_task_manager',
+-                user='Aquil',
+-                password='123123',
++                database='Task_manager',
++                user='postgres',
++                password='postgres',
+                 host='localhost',
+                 port='5432'
+             )
+@@ -18,7 +18,7 @@ class Database:
+             
+             # Создаем/обновляем таблицы
+             self.create_tables()
+-            self.update_tasks_table()  # Добавляем вызов метода обновления
++            self.update_tasks_table()
+             
+         except Exception as e:
+             print(f"Ошибка при подключении к базе данных: {e}")
+diff --git a/main.py b/main.py
+index 583fc0b..fc6f358 100644
+--- a/main.py
++++ b/main.py
+@@ -1,14 +1,74 @@
+ import sys
+ from PyQt5.QtWidgets import QApplication
+ from design import Window
++import psycopg2
++from psycopg2 import Error
++import os
++import subprocess
++
++# def init_database():
++#     try:
++#         # Подключаемся к postgres
++#         connection = psycopg2.connect(
++#             user="postgres",
++#             password="postgres",
++#             host="localhost",
++#             port="5432",
++#             database="Task_manager"
++#         )
++#         connection.autocommit = True
++#         cursor = connection.cursor()
++        
++#         # Получаем абсолютный путь к bd.sql
++#         current_dir = os.path.dirname(os.path.abspath(__file__))
++#         dump_file = os.path.join(current_dir, 'bd.sql')
++        
++#         print(f"Путь к файлу дампа: {dump_file}")  # Для отладки
++#         print(f"Файл существует: {os.path.exists(dump_file)}")  # Проверка существования файла
++        
++#         # Используем полный путь к pg_restore
++#         restore_command = [
++#             r'C:\Program Files\PostgreSQL\15\bin\pg_restore',  # Обновленный путь для версии 15
++#             '-h', 'localhost',
++#             '-p', '5432',
++#             '-U', 'postgres',
++#             '-d', 'postgres',
++#             '-c',
++#             dump_file
++#         ]
++        
++#         # Выполняем восстановление
++#         process = subprocess.Popen(
++#             restore_command,
++#             env={'PGPASSWORD': 'postgres'},
++#             stdout=subprocess.PIPE,
++#             stderr=subprocess.PIPE
++#         )
++        
++#         output, error = process.communicate()
++        
++#         if process.returncode != 0:
++#             print("Вывод pg_restore:", output.decode() if output else "Нет вывода")
++#             print("Ошибка pg_restore:", error.decode() if error else "Нет ошибок")
++#             return None
++            
++#         print("База данных успешно восстановлена!")
++#         return connection
++        
++#     except (Exception, Error) as error:
++#         print(f"Ошибка при инициализации базы данных: {str(error)}")
++#         return None
+ 
+ def main():
+     app = QApplication(sys.argv)
++    
++    # Инициализируем БД и получаем подключение
++    #db_connection = init_database()
++    
+     window = Window()
+-    window.show()  # Показываем основное окносду
+-    # Показываем окно входа
+-    # if not window.func.is_authenticated():
+-    #     window.func.show_login_window()
++    # if db_connection:
++    #     window.db_connection = db_connection
++    window.show()
+     
+     sys.exit(app.exec_())
+ 
+-- 
+2.47.0.windows.2
+

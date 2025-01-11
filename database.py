@@ -7,10 +7,11 @@ from Team import Team
 class Database:
     def __init__(self):
         try:
+            # Подключаемся к postgres для создания новой БД
             self.connection = psycopg2.connect(
-                database='Task_manager',
+                database='Team_task_manager',  # Имя вашей БД
                 user='postgres',
-                password='postgres',
+                password='123123',            # Пароль от вашей БД
                 host='localhost',
                 port='5432'
             )
