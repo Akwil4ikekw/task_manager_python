@@ -8,9 +8,9 @@ class Database:
     def __init__(self):
         try:
             self.connection = psycopg2.connect(
-                database='Team_task_manager',
-                user='Aquil',
-                password='123123',
+                database='Task_manager',
+                user='postgres',
+                password='postgres',
                 host='localhost',
                 port='5432'
             )
@@ -18,7 +18,7 @@ class Database:
             
             # Создаем/обновляем таблицы
             self.create_tables()
-            self.update_tasks_table()  # Добавляем вызов метода обновления
+            self.update_tasks_table()
             
         except Exception as e:
             print(f"Ошибка при подключении к базе данных: {e}")
